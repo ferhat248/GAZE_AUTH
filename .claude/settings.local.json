@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\ferhat\\\\Desktop\\\\gaze_auth\" -Recurse -Force)",
+      "Bash(Select-Object FullName, PSIsContainer)",
+      "Bash(Sort-Object FullName)",
+      "PowerShell(Get-ChildItem -LiteralPath \"c:\\\\Users\\\\ferhat\\\\Desktop\\\\gaze_auth\" | Where-Object { $_.Name -in @\\('launcher.py','gaze_apps.py','gaze_overlay.py','main.py'\\) } | Select-Object Name, Length, LastWriteTime)",
+      "Bash(.venv/Scripts/python.exe launcher.py)",
+      "Bash(.venv/Scripts/python.exe -c \"import launcher; print\\('import OK'\\)\")",
+      "Bash(.venv/Scripts/python.exe -c \"import gaze_apps; print\\('import OK'\\)\")",
+      "PowerShell(Start-Process -FilePath \"c:\\\\Users\\\\ferhat\\\\Desktop\\\\gaze_auth\\\\.venv\\\\Scripts\\\\python.exe\" -ArgumentList \"c:\\\\Users\\\\ferhat\\\\Desktop\\\\gaze_auth\\\\launcher.py\" -WorkingDirectory \"c:\\\\Users\\\\ferhat\\\\Desktop\\\\gaze_auth\")",
+      "PowerShell(dir c:\\\\Users\\\\ferhat\\\\Desktop\\\\gaze_auth\\\\ -Exclude \".venv\",\"__pycache__\" | Where-Object { $_.Name -ne '.venv' -and $_.Name -ne '__pycache__' } | Select-Object Name, Length)"
+    ]
+  }
+}
