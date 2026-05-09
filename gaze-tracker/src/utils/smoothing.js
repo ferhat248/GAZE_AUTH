@@ -1,4 +1,3 @@
-// Hareketli ortalama filtresi — jitter azaltır
 export class MovingAverageFilter {
   constructor(windowSize = 8) {
     this.windowSize = windowSize;
@@ -20,7 +19,6 @@ export class MovingAverageFilter {
   reset() { this.xBuf = []; this.yBuf = []; }
 }
 
-// EMA filtresi — hızlı sakkadlara tepki verir, fiksasyonda pürüzsüz
 export class EMAFilter {
   constructor(alpha = 0.2) {
     this.alpha = alpha;
@@ -38,11 +36,33 @@ export class EMAFilter {
   reset() { this.x = null; this.y = null; }
 }
 
-// İki filtre birden — önce MA, sonra EMA
+// Hıza göre alpha ayarlayan EMA: sakkadda hızlı, fiksasyonda sakin
+export class AdaptiveEMAFilter {
+  constructor(minAlpha = 0.18, maxAlpha = 0.62, speedScale = 55) {
+    this.minAlpha   = minAlpha;
+    this.maxAlpha   = maxAlpha;
+    this.speedScale = speedScale;
+    this.x = null;
+    this.y = null;
+  }
+
+  update(x, y) {
+    if (this.x === null) { this.x = x; this.y = y; return { x, y }; }
+    const speed = Math.sqrt((x - this.x) ** 2 + (y - this.y) ** 2);
+    const alpha = Math.min(this.maxAlpha, this.minAlpha + speed / this.speedScale);
+    this.x += alpha * (x - this.x);
+    this.y += alpha * (y - this.y);
+    return { x: this.x, y: this.y };
+  }
+
+  reset() { this.x = null; this.y = null; }
+}
+
+// MA(4) → AdaptiveEMA: öncekine göre daha az lag, sakkadda daha hızlı
 export class CompositeFilter {
   constructor() {
-    this.ma  = new MovingAverageFilter(6);
-    this.ema = new EMAFilter(0.25);
+    this.ma  = new MovingAverageFilter(4);
+    this.ema = new AdaptiveEMAFilter(0.18, 0.62, 55);
   }
 
   update(x, y) {

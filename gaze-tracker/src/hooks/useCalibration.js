@@ -5,9 +5,9 @@ const CLICKS_PER_POINT = 5;
 const TOTAL_CLICKS = CALIBRATION_POINTS.length * CLICKS_PER_POINT;
 
 export function useCalibration({ recordCalibrationPoint, updateAccuracy }) {
-  const [phase, setPhase]             = useState('idle'); // idle | active | done
+  const [phase, setPhase]             = useState('idle'); // idle | active | validating | done
   const [activeIndex, setActiveIndex] = useState(0);
-  const [clickMap, setClickMap]       = useState({});     // { pointIndex: clickCount }
+  const [clickMap, setClickMap]       = useState({});
   const [doneSet, setDoneSet]         = useState(new Set());
   const [totalClicks, setTotalClicks] = useState(0);
 
@@ -45,15 +45,20 @@ export function useCalibration({ recordCalibrationPoint, updateAccuracy }) {
       if (pointIndex < CALIBRATION_POINTS.length - 1) {
         setActiveIndex(pointIndex + 1);
       } else {
-        // Kalibrasyon bitti
-        localStorage.setItem('gazeCalibrated', 'true');
-        savedRef.current = true;
-        setPhase('done');
+        // Doğruluk testi için 'validating' — finishValidation() çağrısı 'done'a geçirir
+        setPhase('validating');
       }
     } else {
       setClickMap(newMap);
     }
   }, [activeIndex, clickMap, doneSet, recordCalibrationPoint]);
+
+  // Doğruluk testi tamamlandı → localStorage kaydet → EyeTracker mode-select'e geçer
+  const finishValidation = useCallback(() => {
+    localStorage.setItem('gazeCalibrated', 'true');
+    savedRef.current = true;
+    setPhase('done');
+  }, []);
 
   const reset = useCallback(() => {
     localStorage.removeItem('gazeCalibrated');
@@ -76,6 +81,7 @@ export function useCalibration({ recordCalibrationPoint, updateAccuracy }) {
     points: CALIBRATION_POINTS,
     start,
     handleDotClick,
+    finishValidation,
     reset,
   };
 }

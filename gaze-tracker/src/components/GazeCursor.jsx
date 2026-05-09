@@ -1,14 +1,27 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, memo } from 'react';
+import { _gazePositionRef } from '../hooks/useWebGazer';
 
-export default function GazeCursor({ gazePoint, faceDetected, visible }) {
+function GazeCursor({ faceDetected, visible }) {
   const ref = useRef(null);
 
-  // CSS transition yerine transform kullan — daha akıcı
+  // RAF loop: React render döngüsünden bağımsız, ekran yenilemesiyle senkron
   useEffect(() => {
     if (!ref.current) return;
-    ref.current.style.left = gazePoint.x + 'px';
-    ref.current.style.top  = gazePoint.y + 'px';
-  }, [gazePoint]);
+    let rafId;
+    let lastX = -999, lastY = -999;
+    const loop = () => {
+      if (ref.current) {
+        const { x, y } = _gazePositionRef.current;
+        if (x !== lastX || y !== lastY) {
+          ref.current.style.transform = `translate3d(${x - 14}px, ${y - 14}px, 0)`;
+          lastX = x; lastY = y;
+        }
+      }
+      rafId = requestAnimationFrame(loop);
+    };
+    rafId = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rafId);
+  }, []);
 
   if (!visible) return null;
 
@@ -17,6 +30,9 @@ export default function GazeCursor({ gazePoint, faceDetected, visible }) {
       ref={ref}
       className="gaze-cursor"
       style={{
+        left: 0,
+        top: 0,
+        willChange: 'transform',
         width:  28,
         height: 28,
         background: faceDetected
@@ -29,7 +45,6 @@ export default function GazeCursor({ gazePoint, faceDetected, visible }) {
         opacity: faceDetected ? 1 : 0.5,
       }}
     >
-      {/* İç nokta */}
       <div
         style={{
           position: 'absolute',
@@ -44,3 +59,8 @@ export default function GazeCursor({ gazePoint, faceDetected, visible }) {
     </div>
   );
 }
+
+// Sadece faceDetected veya visible değişince re-render et (gazePoint → artık props üzerinden gelmiyor)
+export default memo(GazeCursor, (prev, next) =>
+  prev.faceDetected === next.faceDetected && prev.visible === next.visible
+);

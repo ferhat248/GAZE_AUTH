@@ -1,6 +1,9 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { CompositeFilter } from '../utils/smoothing';
 
+// React dışı veri yolu: GazeCursor bu ref'i RAF loop içinde okur, re-render yok
+export const _gazePositionRef = { current: { x: 0, y: 0 } };
+
 export function useWebGazer() {
   const [status, setStatus]           = useState('idle'); // idle | loading | ready | error
   const [gazePoint, setGazePoint]     = useState({ x: 0, y: 0 });
@@ -13,6 +16,7 @@ export function useWebGazer() {
   const fpsTimer     = useRef(null);
   const initialised  = useRef(false);
   const errorsRef    = useRef([]);   // kalibrasyon doğruluk takibi için
+  const lastGazeRef  = useRef({ x: -999, y: -999 });
 
   // WebGazer'ın DOM öğelerini gizle
   const hideWgElements = useCallback(() => {
@@ -53,7 +57,15 @@ export function useWebGazer() {
           setFaceDetected(true);
           fpsCount.current++;
           const smoothed = filterRef.current.update(data.x, data.y);
-          setGazePoint({ x: smoothed.x, y: smoothed.y });
+          // Cursor her zaman en güncel pozisyonu okur (React dışı)
+          _gazePositionRef.current = smoothed;
+          // React state: 3px deadzone ile güncelle (NavigationMode/PhotoMode için)
+          const dx = Math.abs(smoothed.x - lastGazeRef.current.x);
+          const dy = Math.abs(smoothed.y - lastGazeRef.current.y);
+          if (dx > 3 || dy > 3) {
+            lastGazeRef.current = { x: smoothed.x, y: smoothed.y };
+            setGazePoint({ x: smoothed.x, y: smoothed.y });
+          }
         })
         .saveDataAcrossSessions(true)
         .showVideo(false)
@@ -80,6 +92,7 @@ export function useWebGazer() {
     localStorage.removeItem('webgazerGlobalData');
     filterRef.current.reset();
     errorsRef.current = [];
+    lastGazeRef.current = { x: -999, y: -999 };
     setAccuracy(0);
   }, []);
 
