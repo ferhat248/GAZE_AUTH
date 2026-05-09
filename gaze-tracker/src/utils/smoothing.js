@@ -37,8 +37,11 @@ export class EMAFilter {
 }
 
 // Hıza göre alpha ayarlayan EMA: sakkadda hızlı, fiksasyonda sakin
+// minAlpha düşürüldü → fixation'da daha stabil (az jitter)
+// maxAlpha yükseltildi → sakkadda daha hızlı tepki
+// speedScale düşürüldü → alpha daha erken yükseliyor
 export class AdaptiveEMAFilter {
-  constructor(minAlpha = 0.18, maxAlpha = 0.62, speedScale = 55) {
+  constructor(minAlpha = 0.12, maxAlpha = 0.85, speedScale = 40) {
     this.minAlpha   = minAlpha;
     this.maxAlpha   = maxAlpha;
     this.speedScale = speedScale;
@@ -58,11 +61,11 @@ export class AdaptiveEMAFilter {
   reset() { this.x = null; this.y = null; }
 }
 
-// MA(4) → AdaptiveEMA: öncekine göre daha az lag, sakkadda daha hızlı
+// MA(3) → AdaptiveEMA: WebGazer demo benzeri smooth+responsive
 export class CompositeFilter {
   constructor() {
-    this.ma  = new MovingAverageFilter(4);
-    this.ema = new AdaptiveEMAFilter(0.18, 0.62, 55);
+    this.ma  = new MovingAverageFilter(3);
+    this.ema = new AdaptiveEMAFilter(0.12, 0.85, 40);
   }
 
   update(x, y) {

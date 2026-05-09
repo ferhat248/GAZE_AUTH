@@ -12,7 +12,8 @@ function GazeCursor({ faceDetected, visible }) {
     const loop = () => {
       if (ref.current) {
         const { x, y } = _gazePositionRef.current;
-        if (x !== lastX || y !== lastY) {
+        // 0.4px altındaki sub-pixel titremeleri engelle
+        if (Math.abs(x - lastX) > 0.4 || Math.abs(y - lastY) > 0.4) {
           ref.current.style.transform = `translate3d(${x - 14}px, ${y - 14}px, 0)`;
           lastX = x; lastY = y;
         }
@@ -33,6 +34,7 @@ function GazeCursor({ faceDetected, visible }) {
         left: 0,
         top: 0,
         willChange: 'transform',
+        transition: 'transform 0.025s linear',
         width:  28,
         height: 28,
         background: faceDetected

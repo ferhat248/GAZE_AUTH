@@ -11,12 +11,14 @@ export function useWebGazer() {
   const [fps, setFps]                 = useState(0);
   const [accuracy, setAccuracy]       = useState(0);
 
-  const filterRef    = useRef(new CompositeFilter());
-  const fpsCount     = useRef(0);
-  const fpsTimer     = useRef(null);
-  const initialised  = useRef(false);
-  const errorsRef    = useRef([]);   // kalibrasyon doğruluk takibi için
-  const lastGazeRef  = useRef({ x: -999, y: -999 });
+  const filterRef       = useRef(new CompositeFilter());
+  const fpsCount        = useRef(0);
+  const fpsTimer        = useRef(null);
+  const initialised     = useRef(false);
+  const errorsRef       = useRef([]);   // kalibrasyon doğruluk takibi için
+  const lastGazeRef     = useRef({ x: -999, y: -999 });
+  const lastPredTimeRef = useRef(0);    // prediction throttle
+  const hideIntervalRef = useRef(null); // cleanup için
 
   // WebGazer'ın DOM öğelerini gizle
   const hideWgElements = useCallback(() => {
@@ -54,6 +56,10 @@ export function useWebGazer() {
         .setTracker('mediapipe')
         .setGazeListener((data) => {
           if (!data) { setFaceDetected(false); return; }
+          // 10ms altındaki prediction'ları atla (WebGazer bazen double-fire yapar)
+          const now = performance.now();
+          if (now - lastPredTimeRef.current < 10) return;
+          lastPredTimeRef.current = now;
           setFaceDetected(true);
           fpsCount.current++;
           const smoothed = filterRef.current.update(data.x, data.y);
@@ -76,7 +82,7 @@ export function useWebGazer() {
       wg.showPredictionPoints(false);
       hideWgElements();
       // Interval ile sürekli gizle (WebGazer bazen yeniden ekliyor)
-      setInterval(hideWgElements, 500);
+      hideIntervalRef.current = setInterval(hideWgElements, 500);
 
       initialised.current = true;
       setStatus('ready');
@@ -118,6 +124,7 @@ export function useWebGazer() {
   useEffect(() => {
     return () => {
       clearInterval(fpsTimer.current);
+      clearInterval(hideIntervalRef.current);
       if (initialised.current) {
         try { window.webgazer?.pause(); } catch (_) {}
       }
