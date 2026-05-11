@@ -19,7 +19,7 @@ export default function EyeTracker() {
 
   const handleStart = async () => {
     setAppPhase('loading');
-    await wg.init();
+    await wg.init(cal.isCalibrated);
     if (cal.isCalibrated) {
       setAppPhase('mode-select');
     } else {

@@ -74,4 +74,12 @@ export class CompositeFilter {
   }
 
   reset() { this.ma.reset(); this.ema.reset(); }
+
+  // Face recovery sonrası: MA buffer'ı temizle, EMA'yı mevcut pozisyonda sabitle.
+  // Stale verinin yeni predictionları kirletmesini önler.
+  softReset(x, y) {
+    this.ma.reset();
+    this.ema.x = x;
+    this.ema.y = y;
+  }
 }
