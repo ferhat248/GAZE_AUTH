@@ -29,7 +29,13 @@ export function useCalibration({ recordCalibrationPoint, updateAccuracy }) {
 
     const pt  = CALIBRATION_POINTS[pointIndex];
     const px  = ptToPx(pt);
-    recordCalibrationPoint(px.x, px.y);
+
+    // Demo davranışı: tıklama sonrası göz noktaya iyice oturduğunda 3 sample kaydet.
+    // Tıklama motor hareketi gözü anlık kaydırabilir; kısa gecikmeyle stabil örnekler alınır.
+    // Toplam: 3 sample/tık × 5 tık/nokta × 9 nokta = 135 sample (demoya kıyasla 3×).
+    setTimeout(() => recordCalibrationPoint(px.x, px.y),  30);
+    setTimeout(() => recordCalibrationPoint(px.x, px.y),  80);
+    setTimeout(() => recordCalibrationPoint(px.x, px.y), 130);
 
     const prev    = clickMap[pointIndex] ?? 0;
     const next    = prev + 1;
@@ -45,11 +51,8 @@ export function useCalibration({ recordCalibrationPoint, updateAccuracy }) {
       if (pointIndex < CALIBRATION_POINTS.length - 1) {
         setActiveIndex(pointIndex + 1);
       } else {
-        // Doğruluk testi için 'validating' — finishValidation() çağrısı 'done'a geçirir
         setPhase('validating');
       }
-    } else {
-      setClickMap(newMap);
     }
   }, [activeIndex, clickMap, doneSet, recordCalibrationPoint]);
 

@@ -1,53 +1,34 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { CompositeFilter } from '../utils/smoothing';
 
-// React dışı veri yolu: GazeCursor bu ref'i RAF loop içinde okur, re-render yok
+// React dışı veri yolu: GazeCursor ve ForensicDashboard bu ref'i RAF loop içinde okur
 export const _gazePositionRef = { current: { x: 0, y: 0 } };
 
 export function useWebGazer() {
-  const [status, setStatus]           = useState('idle'); // idle | loading | ready | error
-  const [gazePoint, setGazePoint]     = useState({ x: 0, y: 0 });
+  const [status, setStatus]             = useState('idle');
+  const [gazePoint, setGazePoint]       = useState({ x: 0, y: 0 });
   const [faceDetected, setFaceDetected] = useState(false);
-  const [fps, setFps]                 = useState(0);
-  const [accuracy, setAccuracy]       = useState(0);
+  const [fps, setFps]                   = useState(0);
+  const [accuracy, setAccuracy]         = useState(0);
 
-  const filterRef       = useRef(new CompositeFilter());
   const fpsCount        = useRef(0);
   const fpsTimer        = useRef(null);
   const initialised     = useRef(false);
-  const errorsRef       = useRef([]);   // kalibrasyon doğruluk takibi için
+  const errorsRef       = useRef([]);
   const lastGazeRef     = useRef({ x: -999, y: -999 });
-  const lastPredTimeRef = useRef(0);    // prediction throttle
-  const hideIntervalRef = useRef(null); // cleanup için
-  // Auto-recovery: gereksiz re-render ve anlık blink'leri önler
-  const faceActiveRef   = useRef(false); // React state'ten bağımsız senkron ref
-  const faceLostTimer   = useRef(null);  // grace period zamanlayıcısı
-  const faceLostAtRef   = useRef(0);     // yüz kaybolma zamanı (ms)
+  const lastPredTimeRef = useRef(0);
+  const hideIntervalRef = useRef(null);
 
-  // Webcam track'ine low-light için frame rate constraint uygula (sessizce başarısız olabilir)
-  const optimizeWebcam = useCallback(() => {
-    try {
-      const video = document.getElementById('webgazerVideoFeed');
-      if (!video?.srcObject) return;
-      const track = video.srcObject.getVideoTracks()[0];
-      if (track) {
-        track.applyConstraints({ frameRate: { ideal: 30, min: 15 } }).catch(() => {});
-      }
-    } catch (_) {}
-  }, []);
+  // Face detection grace period — anlık blink'lerde state thrash'i önler
+  const faceActiveRef   = useRef(false);
+  const faceLostTimer   = useRef(null);
+  const faceLostAtRef   = useRef(0);
 
-  // WebGazer'ın DOM öğelerini gizle
   const hideWgElements = useCallback(() => {
-    const ids = [
-      'webgazerVideoFeed',
-      'webgazerFaceOverlay',
-      'webgazerFaceFeedbackBox',
-      'webgazerGazeDot',
-    ];
-    ids.forEach((id) => {
-      const el = document.getElementById(id);
-      if (el) el.style.display = 'none';
-    });
+    ['webgazerVideoFeed', 'webgazerFaceOverlay', 'webgazerFaceFeedbackBox', 'webgazerGazeDot']
+      .forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+      });
   }, []);
 
   const startFpsCounter = useCallback(() => {
@@ -62,11 +43,9 @@ export function useWebGazer() {
     const wg = window.webgazer;
     if (!wg) { setStatus('error'); return; }
 
-    // Kalibrasyon yoksa eski/bozuk WebGazer verisini temizle
     if (!isCalibrated) {
       try { wg.clearData(); } catch (_) {}
       localStorage.removeItem('webgazerGlobalData');
-      filterRef.current.reset();
     }
 
     setStatus('loading');
@@ -80,64 +59,52 @@ export function useWebGazer() {
         .setGazeListener((data) => {
           const now = performance.now();
 
+          // Yüz yok — grace period ile state güncelle
           if (!data) {
-            // Grace period: 400ms boyunca face yoksa state güncelle (anlık blink'leri engeller)
             if (faceActiveRef.current && !faceLostTimer.current) {
               faceLostAtRef.current = now;
               faceLostTimer.current = setTimeout(() => {
                 faceActiveRef.current = false;
                 setFaceDetected(false);
                 faceLostTimer.current = null;
-              }, 400);
+              }, 700);
             }
             return;
           }
 
-          // Yüz geri geldi — grace period zamanlayıcısını iptal et
+          // Yüz geri geldi
           if (faceLostTimer.current) {
             clearTimeout(faceLostTimer.current);
             faceLostTimer.current = null;
           }
 
-          // NaN / Infinity değerleri filtre'yi kalıcı bozar → at
+          // Bozuk değerleri at
           if (!isFinite(data.x) || !isFinite(data.y)) return;
 
-          // 10ms altındaki prediction'ları atla (WebGazer bazen double-fire yapar)
-          if (now - lastPredTimeRef.current < 10) return;
+          // WebGazer bazen 5ms içinde double-fire yapar
+          if (now - lastPredTimeRef.current < 5) return;
           lastPredTimeRef.current = now;
 
           fpsCount.current++;
 
-          // State yalnızca false→true geçişinde güncellenir (gereksiz re-render engellenir)
           if (!faceActiveRef.current) {
             faceActiveRef.current = true;
             setFaceDetected(true);
-            // 500ms+ yokluktan sonra dönüşte filtre stale data'yı temizle
-            if (now - faceLostAtRef.current > 500) {
-              filterRef.current.softReset(data.x, data.y);
-            }
           }
 
-          // Ekran sınırlarına kısıtla (dışarıdaki değerler regresyon sapması oluşturur)
+          // Ekran sınırına kısıtla
           const cx = Math.max(0, Math.min(window.innerWidth,  data.x));
           const cy = Math.max(0, Math.min(window.innerHeight, data.y));
 
-          const smoothed = filterRef.current.update(cx, cy);
+          // WebGazer Kalman filter çıktısını doğrudan kullan — custom filter yok
+          _gazePositionRef.current = { x: cx, y: cy };
 
-          // Filtre bozulmuşsa (NaN çıktı) sıfırla
-          if (!isFinite(smoothed.x) || !isFinite(smoothed.y)) {
-            filterRef.current.reset();
-            return;
-          }
-
-          // Cursor her zaman en güncel pozisyonu okur (React dışı)
-          _gazePositionRef.current = smoothed;
-          // React state: 3px deadzone ile güncelle (NavigationMode/PhotoMode için)
-          const dx = Math.abs(smoothed.x - lastGazeRef.current.x);
-          const dy = Math.abs(smoothed.y - lastGazeRef.current.y);
+          // React state: 3px deadzone (re-render spam engeller, cursor etkilenmez)
+          const dx = Math.abs(cx - lastGazeRef.current.x);
+          const dy = Math.abs(cy - lastGazeRef.current.y);
           if (dx > 3 || dy > 3) {
-            lastGazeRef.current = { x: smoothed.x, y: smoothed.y };
-            setGazePoint({ x: smoothed.x, y: smoothed.y });
+            lastGazeRef.current = { x: cx, y: cy };
+            setGazePoint({ x: cx, y: cy });
           }
         })
         .saveDataAcrossSessions(isCalibrated)
@@ -146,12 +113,15 @@ export function useWebGazer() {
         .showFaceFeedbackBox(false)
         .begin();
 
+      // Demo davranışı: WebGazer'ın kendi Kalman filtresi aktif
+      // Bu, custom EMA/MA pipeline'ın yerini alır — demo sayfasıyla birebir
+      try { wg.applyKalmanFilter(true); } catch (_) {}
+
       wg.showPredictionPoints(false);
-      hideWgElements();
-      // Interval ile sürekli gizle (WebGazer bazen yeniden ekliyor)
-      hideIntervalRef.current = setInterval(hideWgElements, 500);
-      // Kamera başladıktan sonra frame rate optimize et
-      setTimeout(optimizeWebcam, 1500);
+      // WebGazer elementi ilk 2s içinde oluşturur; biraz bekleyip gizle, sonra seyrek denetle.
+      setTimeout(hideWgElements, 200);
+      setTimeout(hideWgElements, 800);
+      hideIntervalRef.current = setInterval(hideWgElements, 3000);
 
       initialised.current = true;
       setStatus('ready');
@@ -160,18 +130,16 @@ export function useWebGazer() {
       console.error('[useWebGazer] init error:', err);
       setStatus('error');
     }
-  }, [hideWgElements, startFpsCounter, optimizeWebcam]);
+  }, [hideWgElements, startFpsCounter]);
 
   const clearCalibrationData = useCallback(() => {
     window.webgazer?.clearData();
     localStorage.removeItem('webgazerGlobalData');
-    filterRef.current.reset();
     errorsRef.current = [];
     lastGazeRef.current = { x: -999, y: -999 };
     setAccuracy(0);
   }, []);
 
-  // Kalibrasyon noktası kaydı — WebGazer click listener + explicit call
   const recordCalibrationPoint = useCallback((screenX, screenY) => {
     const wg = window.webgazer;
     if (!wg) return;
@@ -180,9 +148,8 @@ export function useWebGazer() {
     }
   }, []);
 
-  // Doğruluk güncelle (her kalibrasyon tıklamasından sonra çağrılır)
   const updateAccuracy = useCallback((predictedX, predictedY, targetX, targetY) => {
-    const err = Math.sqrt((predictedX - targetX) ** 2 + (predictedY - targetY) ** 2);
+    const err  = Math.sqrt((predictedX - targetX) ** 2 + (predictedY - targetY) ** 2);
     errorsRef.current.push(err);
     if (errorsRef.current.length > 30) errorsRef.current.shift();
     const diag = Math.sqrt(window.innerWidth ** 2 + window.innerHeight ** 2);

@@ -131,6 +131,10 @@ export default function CalibrationScreen({ cal }) {
       const aGrade = accuracyGrade(res.accuracy);
       const sGrade = stabilityGrade(res.stability);
       const isGood = res.accuracy >= 65;
+      const validPts   = res.pointStats.filter(s => s.count > 0);
+      const avgSamples = validPts.length
+        ? validPts.reduce((a, s) => a + s.count, 0) / validPts.length : 0;
+      const confidence = Math.min(100, Math.round(avgSamples / 30 * 100));
 
       return (
         <div style={{
@@ -176,7 +180,8 @@ export default function CalibrationScreen({ cal }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '.5rem', marginBottom: '1.2rem' }}>
               {[
                 ['Ortalama Hata', `${res.meanError}px`, '#f8fafc'],
-                ['Stabilite', sGrade.label, sGrade.color],
+                ['Stabilite', `${res.stability}% — ${sGrade.label}`, sGrade.color],
+                ['Güven Skoru', `${confidence}%`, confidence >= 70 ? '#10b981' : confidence >= 40 ? '#f59e0b' : '#ef4444'],
               ].map(([label, value, color]) => (
                 <div key={label} style={{
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -383,7 +388,11 @@ export default function CalibrationScreen({ cal }) {
 
   /* ── PHASE: active (kalibrasyon noktaları) ───────────────────────── */
   return (
-    <div className="fixed inset-0 z-40" style={{ background: '#06060f', cursor: 'crosshair' }}>
+    <div className="fixed inset-0 z-40" style={{
+      background: '#06060f', cursor: 'crosshair',
+      backgroundImage: 'linear-gradient(rgba(99,102,241,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(99,102,241,0.03) 1px, transparent 1px)',
+      backgroundSize: '50px 50px',
+    }}>
       {/* Üst bar */}
       <div className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-5 py-3" style={{
         background: 'rgba(4,4,14,0.92)', backdropFilter: 'blur(8px)',
@@ -452,12 +461,23 @@ export default function CalibrationScreen({ cal }) {
             }}
           >
             {active && !done && (
-              <ProgressRing
-                progress={(clicks / clicksPerPoint) * 100}
-                size={size}
-                stroke={3}
-                color="#fbbf24"
-              />
+              <>
+                <div style={{
+                  position: 'absolute',
+                  width: size * 2.4, height: size * 2.4,
+                  borderRadius: '50%',
+                  border: '1.5px solid rgba(251,191,36,0.45)',
+                  top: '50%', left: '50%',
+                  animation: 'calRingPulse 1.6s ease-out infinite',
+                  pointerEvents: 'none',
+                }} />
+                <ProgressRing
+                  progress={(clicks / clicksPerPoint) * 100}
+                  size={size}
+                  stroke={3}
+                  color="#fbbf24"
+                />
+              </>
             )}
             <div style={{
               width: 12, height: 12, borderRadius: '50%',

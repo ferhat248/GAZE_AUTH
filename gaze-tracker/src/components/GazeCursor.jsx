@@ -34,7 +34,6 @@ function GazeCursor({ faceDetected, visible }) {
         left: 0,
         top: 0,
         willChange: 'transform',
-        transition: 'transform 0.025s linear',
         width:  28,
         height: 28,
         background: faceDetected

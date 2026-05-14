@@ -67,6 +67,30 @@ html, body, #root {
 }
 .cal-dot-active { animation: dotPulse 0.9s ease-in-out infinite; }
 
+/* Active kalibrasyon noktası dış halka */
+@keyframes calRingPulse {
+  0%   { transform: translate(-50%, -50%) scale(0.85); opacity: 0.75; }
+  100% { transform: translate(-50%, -50%) scale(2.4);  opacity: 0;    }
+}
+
+/* Ekran giriş animasyonu */
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.97) translateY(7px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0);   }
+}
+
+/* Göz ikonu glow efekti */
+@keyframes pulseGlow {
+  0%, 100% { filter: drop-shadow(0 0 8px  rgba(99,102,241,0.55)); }
+  50%       { filter: drop-shadow(0 0 22px rgba(139,92,246,0.90)); }
+}
+
+/* Loading dots */
+@keyframes pulse {
+  0%, 100% { transform: scale(0.75); opacity: 0.45; }
+  50%       { transform: scale(1.25); opacity: 1;   }
+}
+
 /* Scan-line animasyonu başlangıç ekranı için */
 @keyframes scanLine {
   0%   { transform: translateY(-100%); }
@@ -80,4 +104,57 @@ html, body, #root {
   animation: scanLine 4s linear infinite;
   pointer-events: none;
   z-index: 1;
+}
+
+/* Cyber Interrogation: vertical scan effect */
+@keyframes cyberScanV {
+  0%   { top: 0%; opacity: 0.9; }
+  100% { top: 100%; opacity: 0.2; }
+}
+
+/* Cyber Interrogation: decryption progress animation */
+@keyframes cyberDecrypt {
+  0%   { width: 40%; }
+  100% { width: 62%; }
+}
+
+/* Holographic pulse for alerts */
+@keyframes holoPulse {
+  0%, 100% { box-shadow: 0 0 10px rgba(239,68,68,0.15), inset 0 0 10px rgba(239,68,68,0.05); }
+  50%       { box-shadow: 0 0 24px rgba(239,68,68,0.35), inset 0 0 18px rgba(239,68,68,0.1); }
+}
+
+/* Forensic: malware scan bar */
+@keyframes forensicScan {
+  0%   { width: 58%; }
+  100% { width: 100%; }
+}
+.forensic-scan-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #ff8800, #ff3355);
+  border-radius: 3px;
+  animation: forensicScan 20s linear infinite alternate;
+  box-shadow: 0 0 6px rgba(255,136,0,0.5);
+}
+
+/* Forensic: critical alert blink */
+@keyframes forensicBlink {
+  0%, 80%, 100% { opacity: 1; }
+  40%, 60%      { opacity: 0.15; }
+}
+
+/* Forensic: bottom ticker */
+@keyframes forensicTicker {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+.forensic-ticker {
+  position: absolute;
+  white-space: nowrap;
+  font-size: 0.65rem;
+  font-family: 'Courier New', monospace;
+  color: #1e293b;
+  letter-spacing: 0.06em;
+  animation: forensicTicker 70s linear infinite;
+  will-change: transform;
 }

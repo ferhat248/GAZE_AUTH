@@ -5,6 +5,7 @@ import CalibrationScreen    from './CalibrationScreen';
 import NavigationMode       from './NavigationMode';
 import PhotoMode            from './PhotoMode';
 import GazeCursor           from './GazeCursor';
+import GazePassword         from './GazePassword';
 import StatusPanel          from './StatusPanel';
 
 export default function EyeTracker() {
@@ -14,7 +15,7 @@ export default function EyeTracker() {
     updateAccuracy:         wg.updateAccuracy,
   });
 
-  // splash | loading | calibrating | mode-select | photo | tracking
+  // splash | loading | calibrating | mode-select | photo | tracking | forensic
   const [appPhase, setAppPhase] = useState('splash');
 
   const handleStart = async () => {
@@ -185,6 +186,35 @@ export default function EyeTracker() {
               Ekran 4 bölgeye ayrılır. Bir bölgeye 3 saniye bakarak YouTube, Google, GitHub veya ChatGPT&apos;ye gidebilirsiniz.
             </div>
           </button>
+
+          {/* Biyometrik Giriş */}
+          <button
+            onClick={() => setAppPhase('forensic')}
+            style={{
+              width: 280, padding: '2rem', borderRadius: 22, border: '1px solid rgba(255,255,255,0.08)',
+              background: 'rgba(10,10,24,0.92)', cursor: 'pointer', textAlign: 'center',
+              backdropFilter: 'blur(14px)', transition: 'transform .2s, box-shadow .2s',
+              boxShadow: '0 0 0 rgba(99,102,241,0)',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.transform = 'scale(1.04)';
+              e.currentTarget.style.boxShadow = '0 0 45px rgba(99,102,241,0.28)';
+              e.currentTarget.style.borderColor = 'rgba(99,102,241,0.5)';
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.boxShadow = '0 0 0 rgba(99,102,241,0)';
+              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)';
+            }}
+          >
+            <div style={{ fontSize: '3rem', marginBottom: '.75rem' }}>🔐</div>
+            <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#f8fafc', marginBottom: '.5rem' }}>
+              Biyometrik Giriş
+            </div>
+            <div style={{ fontSize: '.84rem', color: '#94a3b8', lineHeight: 1.65 }}>
+              Göz hareketiyle şifre oluştur ve kimliğini doğrula. Düğüm dizisine bakarak giriş yap.
+            </div>
+          </button>
         </div>
 
         <button
@@ -200,6 +230,17 @@ export default function EyeTracker() {
           ↺ Yeniden Kalibre Et
         </button>
       </div>
+    );
+  }
+
+  /* ── Gaze Password ── */
+  if (appPhase === 'forensic') {
+    return (
+      <GazePassword
+        gazePoint={wg.gazePoint}
+        faceDetected={wg.faceDetected}
+        onBack={() => setAppPhase('mode-select')}
+      />
     );
   }
 
