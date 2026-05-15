@@ -173,23 +173,8 @@ export default function NavigationMode({ gazePoint, faceDetected, onBack }) {
     <>
       <div
         className="fixed inset-0"
-        style={{ paddingTop: 48, cursor: 'none', background: '#050510' }}
+        style={{ paddingTop: 48, cursor: 'default', background: '#050510' }}
       >
-        {/* Geri butonu */}
-        {onBack && (
-          <button
-            onClick={onBack}
-            style={{
-              position: 'fixed', top: 8, left: 16, zIndex: 600,
-              padding: '.28rem .8rem', borderRadius: 8,
-              border: '1px solid rgba(255,255,255,0.1)',
-              background: 'rgba(255,255,255,0.07)', color: '#94a3b8',
-              cursor: 'pointer', fontSize: '.72rem', fontWeight: 600,
-            }}
-          >
-            ← Geri
-          </button>
-        )}
 
         {/* 2×2 grid */}
         <div className="w-full h-full grid grid-cols-2 grid-rows-2 gap-3 p-3">
@@ -213,14 +198,15 @@ export default function NavigationMode({ gazePoint, faceDetected, onBack }) {
             position: 'absolute', top: 0, left: -20 }} />
         </div>
 
-        {/* Ana Sayfa — floating corner button, dwell-activated */}
+        {/* Geri butonu — sağ üst, hem tıklanabilir hem gaze-dwell */}
         {onBack && (
           <div
             ref={homeRef}
+            onClick={onBack}
             style={{
-              position: 'fixed', top: 8, right: 16, zIndex: 600,
+              position: 'fixed', top: 8, right: 16, zIndex: 9999,
               display: 'flex', flexDirection: 'column',
-              alignItems: 'center', gap: 2, cursor: 'none',
+              alignItems: 'center', gap: 2, cursor: 'pointer',
             }}
           >
             <div style={{ position: 'relative', width: 48, height: 48 }}>
@@ -246,14 +232,14 @@ export default function NavigationMode({ gazePoint, faceDetected, onBack }) {
                 border: '1px solid rgba(99,102,241,0.22)',
                 fontSize: '.88rem',
               }}>
-                🏠
+                ←
               </div>
             </div>
             <div
               ref={homeLabelRef}
               style={{ fontSize: '.58rem', color: '#6366f1', fontWeight: 600, minWidth: 40, textAlign: 'center' }}
             >
-              Ana Sayfa
+              Geri
             </div>
           </div>
         )}
@@ -263,7 +249,7 @@ export default function NavigationMode({ gazePoint, faceDetected, onBack }) {
           padding: '.45rem 1.2rem', background: 'rgba(0,0,0,0.45)',
           border: '1px solid rgba(255,255,255,0.07)', borderRadius: 100,
           fontSize: '.74rem', color: '#94a3b8', zIndex: 500 }}>
-          Bir bölgeye 3 saniye bakın → otomatik yönlendirme
+          Bir bölgeye 3 saniye bakın → yönlendirme &nbsp;|&nbsp; Sağ üste 1.5s bakın → geri
         </div>
       </div>
 

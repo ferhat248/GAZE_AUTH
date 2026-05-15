@@ -5,7 +5,7 @@ import CalibrationScreen    from './CalibrationScreen';
 import NavigationMode       from './NavigationMode';
 import PhotoMode            from './PhotoMode';
 import GazeCursor           from './GazeCursor';
-import GazePassword         from './GazePassword';
+import ForensicMode         from './ForensicMode';
 import StatusPanel          from './StatusPanel';
 
 export default function EyeTracker() {
@@ -153,7 +153,7 @@ export default function EyeTracker() {
             </div>
           </button>
 
-          {/* Biyometrik Giriş */}
+          {/* Adli Bilişim */}
           <button
             onClick={() => setAppPhase('forensic')}
             style={{
@@ -173,12 +173,12 @@ export default function EyeTracker() {
               e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)';
             }}
           >
-            <div style={{ fontSize: '3rem', marginBottom: '.75rem' }}>🔐</div>
+            <div style={{ fontSize: '3rem', marginBottom: '.75rem' }}>🔍</div>
             <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#f8fafc', marginBottom: '.5rem' }}>
-              Biyometrik Giriş
+              Adli Bilişim Modu
             </div>
             <div style={{ fontSize: '.84rem', color: '#94a3b8', lineHeight: 1.65 }}>
-              Göz hareketiyle şifre oluştur ve kimliğini doğrula. Düğüm dizisine bakarak giriş yap.
+              Log ve görüntü dosyalarını yükle, göz takibiyle incele. Şüpheli deliller otomatik işaretlenir.
             </div>
           </button>
         </div>
@@ -199,10 +199,10 @@ export default function EyeTracker() {
     );
   }
 
-  /* ── Gaze Password ── */
+  /* ── Forensic Mode ── */
   if (appPhase === 'forensic') {
     return (
-      <GazePassword
+      <ForensicMode
         gazePoint={wg.gazePoint}
         faceDetected={wg.faceDetected}
         onBack={() => setAppPhase('mode-select')}

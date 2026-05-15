@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WebGazer — Kalibrasyon</title>
+  <script src="https://cdn.jsdelivr.net/npm/webgazer@2.1.0/dist/webgazer.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      width: 100vw;
+      height: 100vh;
+      background: #f0f0f0;
+      font-family: Arial, Helvetica, sans-serif;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* ── Info bar ── */
+    #info-bar {
+      position: fixed;
+      top: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.75);
+      color: #fff;
+      padding: 9px 24px;
+      border-radius: 20px;
+      font-size: 14px;
+      z-index: 9999;
+      text-align: center;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+    #info-bar b   { color: #ffcc00; }
+    #progress-txt { color: #88ff88; font-weight: bold; }
+
+    /* ── Calibration buttons ── */
+    .cal-btn {
+      position: fixed;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: #ff4444;
+      border: 3px solid #cc0000;
+      cursor: pointer;
+      z-index: 500;
+      transform: translate(-50%, -50%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 13px;
+      font-weight: bold;
+      box-shadow: 0 0 10px rgba(255, 68, 68, 0.6);
+      transition: transform 0.12s ease, background 0.25s ease, opacity 0.3s ease;
+    }
+    .cal-btn:hover:not(:disabled) {
+      transform: translate(-50%, -50%) scale(1.35);
+      box-shadow: 0 0 18px rgba(255, 68, 68, 0.9);
+    }
+    .cal-btn:active:not(:disabled) {
+      transform: translate(-50%, -50%) scale(0.9);
+    }
+    .cal-btn.filling {
+      background: #ff8800;
+      border-color: #cc6600;
+      box-shadow: 0 0 14px rgba(255, 136, 0, 0.8);
+    }
+    .cal-btn.done {
+      background: #22cc44;
+      border-color: #119922;
+      box-shadow: 0 0 14px rgba(34, 204, 68, 0.7);
+      cursor: default;
+      pointer-events: none;
+      opacity: 0.55;
+    }
+
+    /* ── Accuracy test overlay ── */
+    #accuracy-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 800;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 24px;
+    }
+    #accuracy-overlay.visible { display: flex; }
+
+    #accuracy-target {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: #ffdd00;
+      border: 4px solid #ff4400;
+      box-shadow: 0 0 20px rgba(255, 200, 0, 0.7);
+    }
+    #accuracy-label {
+      background: rgba(0, 0, 0, 0.7);
+      color: #fff;
+      padding: 8px 20px;
+      border-radius: 16px;
+      font-size: 14px;
+      text-align: center;
+      pointer-events: none;
+    }
+
+    /* ── Completion overlay ── */
+    #done-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 9998;
+      align-items: center;
+      justify-content: center;
+    }
+    #done-overlay.visible { display: flex; }
+
+    #done-card {
+      background: #fff;
+      border-radius: 18px;
+      padding: 44px 60px;
+      text-align: center;
+      box-shadow: 0 8px 40px rgba(0, 0, 0, 0.25);
+      max-width: 400px;
+      width: 90%;
+    }
+    #done-card .icon { font-size: 52px; margin-bottom: 12px; }
+    #done-card h2 { font-size: 24px; color: #22aa44; margin-bottom: 8px; }
+    #done-card p  { font-size: 14px; color: #555; margin-bottom: 24px; line-height: 1.6; }
+
+    #accuracy-result {
+      font-size: 28px;
+      font-weight: bold;
+      margin-bottom: 8px;
+    }
+    #accuracy-desc {
+      font-size: 13px;
+      color: #777;
+      margin-bottom: 20px;
+    }
+
+    #done-card .btn-row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+    #done-card button {
+      padding: 10px 24px;
+      border-radius: 8px;
+      border: none;
+      font-size: 14px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    #done-card button:hover { opacity: 0.85; }
+    #btn-go-app  { background: #4a90e2; color: #fff; }
+    #btn-redo    { background: #ddd; color: #333; }
+
+    /* ── Error message ── */
+    #error-msg {
+      display: none;
+      position: fixed;
+      bottom: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #cc2222;
+      color: #fff;
+      padding: 9px 22px;
+      border-radius: 10px;
+      font-size: 13px;
+      z-index: 9999;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Info bar -->
+  <div id="info-bar">
+    Her kırmızı noktaya <b>bakın</b> ve <b>5 kez tıklayın</b>
+    &nbsp;|&nbsp;
+    Tamamlanan: <span id="progress-txt">0 / 9</span>
+  </div>
+
+  <!-- Accuracy test overlay (shown after all 9 points done) -->
+  <div id="accuracy-overlay">
+    <div id="accuracy-target"></div>
+    <div id="accuracy-label">Sarı noktaya bakın — doğruluk ölçülüyor...</div>
+  </div>
+
+  <!-- Completion card -->
+  <div id="done-overlay">
+    <div id="done-card">
+      <div class="icon">✅</div>
+      <h2>Kalibrasyon Tamamlandı!</h2>
+      <div id="accuracy-result"></div>
+      <div id="accuracy-desc">100 piksel yarıçap içindeki tahmin oranı</div>
+      <p>
+        9 noktadan toplam 45 tıklama kaydedildi.<br>
+        Kalibrasyon verisi tarayıcıya kaydedildi.
+      </p>
+      <div class="btn-row">
+        <button id="btn-go-app" onclick="goToApp()">→ Uygulamaya Dön</button>
+        <button id="btn-redo"   onclick="redoCalibration()">↺ Yeniden Kalibre Et</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Camera / WebGazer error -->
+  <div id="error-msg">Kamera erişimi reddedildi. Sayfayı yenileyin ve kameraya izin verin.</div>
+
+  <script>
+    // ── Constants ──────────────────────────────────────────────────────────────
+    const MAX_CLICKS   = 5;
+    const TOTAL_POINTS = 9;
+
+    // 9-point grid — same positions as the WebGazer demo
+    const POSITIONS = [
+      { left: '5%',  top: '5%'  },
+      { left: '50%', top: '5%'  },
+      { left: '95%', top: '5%'  },
+      { left: '5%',  top: '50%' },
+      { left: '50%', top: '50%' },
+      { left: '95%', top: '50%' },
+      { left: '5%',  top: '95%' },
+      { left: '50%', top: '95%' },
+      { left: '95%', top: '95%' },
+    ];
+
+    // ── State ──────────────────────────────────────────────────────────────────
+    var clickCounts      = new Array(TOTAL_POINTS).fill(0);
+    var completedPoints  = 0;
+    var collectingForAcc = false;
+    var accSamples       = [];
+
+    // ── Build calibration buttons ──────────────────────────────────────────────
+    POSITIONS.forEach(function(pos, i) {
+      var btn = document.createElement('button');
+      btn.className = 'cal-btn';
+      btn.id = 'cal-' + i;
+      btn.textContent = MAX_CLICKS;
+      btn.style.left = pos.left;
+      btn.style.top  = pos.top;
+      btn.addEventListener('click', function() { onCalClick(i); });
+      document.body.appendChild(btn);
+    });
+
+    // ── Click handler ──────────────────────────────────────────────────────────
+    function onCalClick(index) {
+      var btn = document.getElementById('cal-' + index);
+      if (!btn || btn.disabled || clickCounts[index] >= MAX_CLICKS) return;
+
+      clickCounts[index]++;
+      var remaining = MAX_CLICKS - clickCounts[index];
+
+      // Record gaze position in WebGazer at the exact button center
+      var rect = btn.getBoundingClientRect();
+      var cx   = rect.left + rect.width  / 2;
+      var cy   = rect.top  + rect.height / 2;
+      if (window.webgazer && typeof webgazer.recordScreenPosition === 'function') {
+        webgazer.recordScreenPosition(cx, cy, 'click');
+      }
+
+      if (remaining > 0) {
+        btn.textContent = remaining;
+        btn.classList.add('filling');
+        // Brief pulse animation
+        btn.style.transform = 'translate(-50%, -50%) scale(1.25)';
+        setTimeout(function() {
+          btn.style.transform = 'translate(-50%, -50%) scale(1)';
+        }, 110);
+      } else {
+        // Point complete
+        btn.textContent = '✓';
+        btn.classList.remove('filling');
+        btn.classList.add('done');
+        btn.disabled = true;
+        completedPoints++;
+        updateProgress();
+
+        if (completedPoints >= TOTAL_POINTS) {
+          setTimeout(startAccuracyTest, 500);
+        }
+      }
+    }
+
+    // ── Progress indicator ─────────────────────────────────────────────────────
+    function updateProgress() {
+      document.getElementById('progress-txt').textContent =
+        completedPoints + ' / ' + TOTAL_POINTS;
+    }
+
+    // ── Accuracy test — mirrors WebGazer demo's validation step ───────────────
+    function startAccuracyTest() {
+      document.getElementById('info-bar').style.display = 'none';
+      document.getElementById('accuracy-overlay').classList.add('visible');
+
+      accSamples = [];
+
+      // Wait 1s for the user's eyes to settle on the yellow target
+      setTimeout(function() {
+        collectingForAcc = true;
+        document.getElementById('accuracy-label').textContent =
+          '⚡ Ölçülüyor — noktaya bakmaya devam edin...';
+
+        // Collect for 3 seconds then compute
+        setTimeout(function() {
+          collectingForAcc = false;
+          document.getElementById('accuracy-overlay').classList.remove('visible');
+
+          var accuracy = computeAccuracy(accSamples);
+          showResults(accuracy);
+        }, 3000);
+      }, 1000);
+    }
+
+    // ── Accuracy: % of samples within 100 px of viewport center ───────────────
+    function computeAccuracy(samples) {
+      if (samples.length === 0) return 0;
+      var cx = window.innerWidth  / 2;
+      var cy = window.innerHeight / 2;
+      var within = samples.filter(function(s) {
+        var dx = s.x - cx, dy = s.y - cy;
+        return Math.sqrt(dx * dx + dy * dy) < 100;
+      });
+      return Math.round(within.length / samples.length * 100);
+    }
+
+    // ── Show results card ──────────────────────────────────────────────────────
+    function showResults(accuracy) {
+      localStorage.setItem('gazeCalibrated', 'true');
+
+      var color = accuracy >= 75 ? '#22aa44' : accuracy >= 50 ? '#f59e0b' : '#cc2222';
+      var el = document.getElementById('accuracy-result');
+      el.textContent = 'Doğruluk: %' + accuracy;
+      el.style.color = color;
+
+      document.getElementById('done-overlay').classList.add('visible');
+    }
+
+    // ── Navigation ─────────────────────────────────────────────────────────────
+    function goToApp() { window.location.href = '/'; }
+
+    function redoCalibration() {
+      localStorage.removeItem('gazeCalibrated');
+      if (window.webgazer) { try { webgazer.clearData(); } catch (_) {} }
+      window.location.reload();
+    }
+
+    // ── WebGazer init — identical to the demo page ──────────────────────────────
+    window.addEventListener('load', function() {
+      if (!window.webgazer) {
+        var err = document.getElementById('error-msg');
+        err.textContent = 'WebGazer yüklenemedi. İnternet bağlantınızı kontrol edin.';
+        err.style.display = 'block';
+        return;
+      }
+
+      webgazer
+        .setRegression('ridge')
+        .setTracker('mediapipe')
+        .setGazeListener(function(data) {
+          // Collect samples during the accuracy test phase
+          if (collectingForAcc && data && isFinite(data.x) && isFinite(data.y)) {
+            accSamples.push({ x: data.x, y: data.y });
+          }
+        })
+        .saveDataAcrossSessions(true)
+        .begin()
+        .catch(function(err) {
+          console.error('WebGazer başlatılamadı:', err);
+          document.getElementById('error-msg').style.display = 'block';
+        });
+
+      // These three lines mirror the demo page exactly
+      webgazer.showVideoPreview(true);
+      webgazer.showPredictionPoints(true);
+      webgazer.applyKalmanFilter(true);
+    });
+  </script>
+</body>
+</html>
