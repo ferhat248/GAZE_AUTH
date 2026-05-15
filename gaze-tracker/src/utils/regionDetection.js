@@ -1,8 +1,8 @@
 export const REGIONS = {
-  'top-left':     { label: 'YouTube',  icon: '▶️', color: '#ef4444', url: 'https://www.youtube.com' },
-  'top-right':    { label: 'Google',   icon: '🔍', color: '#3b82f6', url: 'https://www.google.com'  },
-  'bottom-left':  { label: 'GitHub',   icon: '🐙', color: '#10b981', url: 'https://www.github.com'  },
-  'bottom-right': { label: 'ChatGPT',  icon: '🤖', color: '#f97316', url: 'https://chat.openai.com' },
+  'top-left':     { label: 'Fırat Üniversitesi',     icon: '🎓', color: '#f59e0b', url: 'https://www.firat.edu.tr'          },
+  'top-right':    { label: 'Google',                 icon: '🔍', color: '#3b82f6', url: 'https://www.google.com'            },
+  'bottom-left':  { label: 'Adli Bilişim Müh.',      icon: '🔬', color: '#8b5cf6', url: 'https://adlibilisim.firat.edu.tr'  },
+  'bottom-right': { label: 'VirusTotal',             icon: '🛡️', color: '#10b981', url: 'https://www.virustotal.com'        },
 };
 
 export function detectRegion(x, y) {
