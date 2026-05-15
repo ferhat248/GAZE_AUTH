@@ -15,7 +15,8 @@ const NODES = [
 ];
 
 const DWELL_MS = 1500;
-const NODE_R   = 54;
+const ENTER_R  = 65; // gaze must enter this radius to begin dwelling
+const EXIT_R   = 80; // hysteresis: once locked, stays until gaze exits this larger radius
 const NODE_SZ  = 92;
 const MIN_SEQ  = 3;
 const MAX_SEQ  = 5;
@@ -86,6 +87,7 @@ export default function GazePassword({ gazePoint, faceDetected, onBack }) {
 
   const dwellRef    = useRef({ nodeId: null, elapsed: 0 });
   const cooldownRef = useRef({});
+  const flashRef    = useRef({});
 
   /* ── Auto-transitions ── */
   useEffect(() => {
@@ -123,16 +125,34 @@ export default function GazePassword({ gazePoint, faceDetected, onBack }) {
         if (cooldownRef.current[k] <= 0) delete cooldownRef.current[k];
       });
 
+      const dw = dwellRef.current;
+
+      // Hysteresis: locked node uses larger EXIT_R so jitter doesn't break active dwell
       let hovered = null;
-      for (const nd of NODES) {
-        const c = nodeCenter(nd.id);
-        if (Math.hypot(x - c.x, y - c.y) < NODE_R && !cooldownRef.current[nd.id]) {
-          hovered = nd.id;
-          break;
+      const lockedNode = dw.nodeId;
+      if (lockedNode !== null) {
+        const lc = nodeCenter(lockedNode);
+        if (Math.hypot(x - lc.x, y - lc.y) < EXIT_R && !cooldownRef.current[lockedNode]) {
+          hovered = lockedNode;
+        } else {
+          for (const nd of NODES) {
+            if (nd.id === lockedNode) continue;
+            const c = nodeCenter(nd.id);
+            if (Math.hypot(x - c.x, y - c.y) < ENTER_R && !cooldownRef.current[nd.id]) {
+              hovered = nd.id;
+              break;
+            }
+          }
+        }
+      } else {
+        for (const nd of NODES) {
+          const c = nodeCenter(nd.id);
+          if (Math.hypot(x - c.x, y - c.y) < ENTER_R && !cooldownRef.current[nd.id]) {
+            hovered = nd.id;
+            break;
+          }
         }
       }
-
-      const dw = dwellRef.current;
       if (hovered !== dw.nodeId) {
         if (dw.nodeId !== null) {
           const r = document.getElementById(`gpr-${dw.nodeId}`);
@@ -148,6 +168,7 @@ export default function GazePassword({ gazePoint, faceDetected, onBack }) {
         if (dw.elapsed >= DWELL_MS) {
           if (r) r.style.strokeDashoffset = String(CIRC);
           cooldownRef.current[hovered] = 700;
+          flashRef.current[hovered] = now;
           dwellRef.current = { nodeId: null, elapsed: 0 };
 
           const cp = phaseRef.current;
@@ -183,9 +204,14 @@ export default function GazePassword({ gazePoint, faceDetected, onBack }) {
         const isHov = nd.id === dwellRef.current.nodeId;
         const pct   = isHov ? Math.min(dwellRef.current.elapsed / DWELL_MS, 1) : 0;
         if (isSel) {
-          el.style.boxShadow   = `0 0 28px ${nd.glow}, 0 0 56px ${nd.glow.replace('0.7', '0.25')}`;
+          const flashAge = flashRef.current[nd.id] !== undefined ? now - flashRef.current[nd.id] : Infinity;
+          const fi = flashAge < 500 ? Math.max(0, 1 - flashAge / 500) : 0;
+          el.style.boxShadow   = fi > 0
+            ? `0 0 ${Math.round(28 + fi * 44)}px ${nd.glow}, 0 0 ${Math.round(56 + fi * 44)}px ${nd.glow.replace('0.7', '0.3')}`
+            : `0 0 28px ${nd.glow}, 0 0 56px ${nd.glow.replace('0.7', '0.25')}`;
           el.style.borderColor = nd.color;
-          el.style.background  = `radial-gradient(circle, ${nd.color}28 0%, ${nd.color}0a 100%)`;
+          el.style.background  = `radial-gradient(circle, ${nd.color}${fi > 0 ? '38' : '28'} 0%, ${nd.color}0a 100%)`;
+          el.style.transform   = fi > 0 ? `scale(${(1 + fi * 0.1).toFixed(3)})` : 'scale(1)';
         } else if (isHov) {
           const i = (0.35 + pct * 0.5).toFixed(2);
           el.style.boxShadow   = `0 0 ${14 + pct * 30}px ${nd.glow.replace('0.7', i)}`;
@@ -207,6 +233,8 @@ export default function GazePassword({ gazePoint, faceDetected, onBack }) {
       for (const nd of NODES) {
         const r = document.getElementById(`gpr-${nd.id}`);
         if (r) r.style.strokeDashoffset = String(CIRC);
+        const el = document.getElementById(`gpn-${nd.id}`);
+        if (el) el.style.transform = 'scale(1)';
       }
     };
   }, [phase]);

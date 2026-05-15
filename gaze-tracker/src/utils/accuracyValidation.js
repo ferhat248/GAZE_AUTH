@@ -1,9 +1,6 @@
+// Single center target — mirrors WebGazer demo's one-point validation
 export const VALIDATION_POINTS = [
   { x: 0.50, y: 0.50, label: 'Merkez' },
-  { x: 0.50, y: 0.14, label: 'Üst'    },
-  { x: 0.50, y: 0.86, label: 'Alt'    },
-  { x: 0.14, y: 0.50, label: 'Sol'    },
-  { x: 0.86, y: 0.50, label: 'Sağ'    },
 ];
 
 export function valPtToPx(pt) {

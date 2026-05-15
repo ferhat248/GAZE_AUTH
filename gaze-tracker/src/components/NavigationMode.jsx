@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { REGIONS } from '../utils/regionDetection';
 import { useDwellDetection } from '../hooks/useDwellDetection';
+import { _gazePositionRef } from '../hooks/useWebGazer';
 
 const CLICK_MS = 3000;
 
@@ -86,12 +87,70 @@ function Zone({ regionKey, isActive, isHovered, progress }) {
   );
 }
 
+const HOME_DWELL_MS = 1500;
+const HOME_R        = 22;
+const HOME_C        = 2 * Math.PI * HOME_R;
+
 export default function NavigationMode({ gazePoint, faceDetected, onBack }) {
   const { activeRegion, dwellProgress, hoveredRegion, firedRegion, clearFired } =
     useDwellDetection({ gazePoint, isActive: faceDetected });
 
   const [redirecting, setRedirecting] = useState(null);
   const redirectTimer = useRef(null);
+
+  const homeRef      = useRef(null);
+  const homeRingRef  = useRef(null);
+  const homeLabelRef = useRef(null);
+
+  useEffect(() => {
+    if (!onBack) return;
+    let rafId, lastT = 0, elapsed = 0, outMs = 0;
+
+    const tick = (now) => {
+      rafId = requestAnimationFrame(tick);
+      const dt = lastT ? now - lastT : 0;
+      lastT = now;
+
+      const btn = homeRef.current;
+      if (!btn) return;
+
+      const rect = btn.getBoundingClientRect();
+      const { x, y } = _gazePositionRef.current;
+      const inside = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+
+      if (inside) {
+        outMs = 0;
+        elapsed = Math.min(elapsed + dt, HOME_DWELL_MS);
+      } else {
+        outMs += dt;
+        if (outMs > 500) elapsed = 0;
+      }
+
+      const pct = elapsed / HOME_DWELL_MS;
+      if (homeRingRef.current)
+        homeRingRef.current.style.strokeDashoffset = HOME_C * (1 - pct);
+
+      // Glow grows as dwell progresses — direct DOM, no React re-renders
+      if (homeRef.current)
+        homeRef.current.style.filter = elapsed > 50
+          ? `drop-shadow(0 0 ${4 + 8 * pct}px rgba(99,102,241,${0.35 + 0.45 * pct}))`
+          : 'none';
+
+      // Label: "Ana Sayfa" at rest → countdown when dwelling
+      if (homeLabelRef.current)
+        homeLabelRef.current.textContent = elapsed > 50
+          ? `${((HOME_DWELL_MS - elapsed) / 1000).toFixed(1)}s`
+          : 'Ana Sayfa';
+
+      if (elapsed >= HOME_DWELL_MS) {
+        elapsed = 0;
+        onBack();
+      }
+    };
+
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [onBack]);
 
   useEffect(() => {
     if (!firedRegion) return;
@@ -153,6 +212,51 @@ export default function NavigationMode({ gazePoint, faceDetected, onBack }) {
           <div style={{ width: 40, height: 1, background: 'rgba(255,255,255,0.08)',
             position: 'absolute', top: 0, left: -20 }} />
         </div>
+
+        {/* Ana Sayfa — floating corner button, dwell-activated */}
+        {onBack && (
+          <div
+            ref={homeRef}
+            style={{
+              position: 'fixed', top: 8, right: 16, zIndex: 600,
+              display: 'flex', flexDirection: 'column',
+              alignItems: 'center', gap: 2, cursor: 'none',
+            }}
+          >
+            <div style={{ position: 'relative', width: 48, height: 48 }}>
+              <svg width={48} height={48} style={{ position: 'absolute', inset: 0 }}>
+                <circle cx={24} cy={24} r={HOME_R} fill="none"
+                  stroke="rgba(255,255,255,0.07)" strokeWidth={2.5} />
+                <circle
+                  ref={homeRingRef}
+                  cx={24} cy={24} r={HOME_R}
+                  fill="none" stroke="#6366f1" strokeWidth={2.5}
+                  strokeLinecap="round"
+                  strokeDasharray={HOME_C}
+                  strokeDashoffset={HOME_C}
+                  style={{ transform: 'rotate(-90deg)', transformOrigin: '50% 50%' }}
+                />
+              </svg>
+              <div style={{
+                position: 'absolute', inset: 0, display: 'flex',
+                alignItems: 'center', justifyContent: 'center',
+                width: 32, height: 32, margin: 8,
+                borderRadius: '50%',
+                background: 'rgba(99,102,241,0.1)',
+                border: '1px solid rgba(99,102,241,0.22)',
+                fontSize: '.88rem',
+              }}>
+                🏠
+              </div>
+            </div>
+            <div
+              ref={homeLabelRef}
+              style={{ fontSize: '.58rem', color: '#6366f1', fontWeight: 600, minWidth: 40, textAlign: 'center' }}
+            >
+              Ana Sayfa
+            </div>
+          </div>
+        )}
 
         {/* Alt bilgi */}
         <div style={{ position: 'fixed', bottom: '1.2rem', left: '50%', transform: 'translateX(-50%)',

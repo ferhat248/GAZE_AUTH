@@ -1,47 +1,44 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 
-// React dışı veri yolu: GazeCursor ve ForensicDashboard bu ref'i RAF loop içinde okur
+// ── Shared gaze ref (non-React path for RAF loops) ──────────────────────────
 export const _gazePositionRef = { current: { x: 0, y: 0 } };
 
+// Module-level flag: WebGazer starts once per page load.
+// useRef would reset on component unmount/remount (route change, etc.) — this does not.
+let _wgStarted = false;
+
+// ────────────────────────────────────────────────────────────────────────────
 export function useWebGazer() {
-  const [status, setStatus]             = useState('idle');
-  const [gazePoint, setGazePoint]       = useState({ x: 0, y: 0 });
-  const [faceDetected, setFaceDetected] = useState(false);
-  const [fps, setFps]                   = useState(0);
-  const [accuracy, setAccuracy]         = useState(0);
+  const [status,      setStatus]      = useState('idle');
+  const [gazePoint,   setGazePoint]   = useState({ x: 0, y: 0 });
+  const [faceDetected,setFaceDetected]= useState(false);
 
-  const fpsCount        = useRef(0);
-  const fpsTimer        = useRef(null);
-  const initialised     = useRef(false);
-  const errorsRef       = useRef([]);
-  const lastGazeRef     = useRef({ x: -999, y: -999 });
-  const lastPredTimeRef = useRef(0);
-  const hideIntervalRef = useRef(null);
+  const faceRef        = useRef(false);
+  const faceTimerRef   = useRef(null);
+  const hideIntervalRef= useRef(null);
+  const lastGazeRef    = useRef({ x: -999, y: -999 });
 
-  // Face detection grace period — anlık blink'lerde state thrash'i önler
-  const faceActiveRef   = useRef(false);
-  const faceLostTimer   = useRef(null);
-  const faceLostAtRef   = useRef(0);
-
-  const hideWgElements = useCallback(() => {
-    ['webgazerVideoFeed', 'webgazerFaceOverlay', 'webgazerFaceFeedbackBox', 'webgazerGazeDot']
+  // ── Hide WebGazer's own DOM elements (we use our own cursor) ──────────────
+  const hideWgUI = useCallback(() => {
+    ['webgazerVideoFeed','webgazerFaceOverlay','webgazerFaceFeedbackBox','webgazerGazeDot']
       .forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = 'none';
       });
   }, []);
 
-  const startFpsCounter = useCallback(() => {
-    fpsTimer.current = setInterval(() => {
-      setFps(fpsCount.current);
-      fpsCount.current = 0;
-    }, 1000);
-  }, []);
-
+  // ── init ──────────────────────────────────────────────────────────────────
+  // Returns true on success, false on failure.
   const init = useCallback(async (isCalibrated = false) => {
-    if (initialised.current) return;
     const wg = window.webgazer;
-    if (!wg) { setStatus('error'); return; }
+    if (!wg) { setStatus('error'); return false; }
+
+    // Already running (component remount, route change) — just resume + signal ok.
+    if (_wgStarted) {
+      try { wg.resume(); } catch (_) {}
+      setStatus('ready');
+      return true;
+    }
 
     if (!isCalibrated) {
       try { wg.clearData(); } catch (_) {}
@@ -49,7 +46,10 @@ export function useWebGazer() {
     }
 
     setStatus('loading');
+
     try {
+      _wgStarted = true;
+
       wg.params.showFaceFeedbackBox = false;
       wg.params.showFaceOverlay     = false;
 
@@ -57,54 +57,39 @@ export function useWebGazer() {
         .setRegression('ridge')
         .setTracker('mediapipe')
         .setGazeListener((data) => {
-          const now = performance.now();
-
-          // Yüz yok — grace period ile state güncelle
+          // Face lost
           if (!data) {
-            if (faceActiveRef.current && !faceLostTimer.current) {
-              faceLostAtRef.current = now;
-              faceLostTimer.current = setTimeout(() => {
-                faceActiveRef.current = false;
+            if (faceRef.current && !faceTimerRef.current) {
+              faceTimerRef.current = setTimeout(() => {
+                faceRef.current = false;
                 setFaceDetected(false);
-                faceLostTimer.current = null;
-              }, 700);
+                faceTimerRef.current = null;
+              }, 300); // 300ms tolerance: handles blinks
             }
             return;
           }
 
-          // Yüz geri geldi
-          if (faceLostTimer.current) {
-            clearTimeout(faceLostTimer.current);
-            faceLostTimer.current = null;
+          // Face recovered
+          if (faceTimerRef.current) {
+            clearTimeout(faceTimerRef.current);
+            faceTimerRef.current = null;
           }
-
-          // Bozuk değerleri at
           if (!isFinite(data.x) || !isFinite(data.y)) return;
+          if (!faceRef.current) { faceRef.current = true; setFaceDetected(true); }
 
-          // WebGazer bazen 5ms içinde double-fire yapar
-          if (now - lastPredTimeRef.current < 5) return;
-          lastPredTimeRef.current = now;
+          // WebGazer Kalman output — clamp to viewport, no extra math
+          const x = Math.max(0, Math.min(window.innerWidth,  data.x));
+          const y = Math.max(0, Math.min(window.innerHeight, data.y));
 
-          fpsCount.current++;
+          // Ref path: every prediction, zero delay (cursor + GazePassword use this)
+          _gazePositionRef.current = { x, y };
 
-          if (!faceActiveRef.current) {
-            faceActiveRef.current = true;
-            setFaceDetected(true);
-          }
-
-          // Ekran sınırına kısıtla
-          const cx = Math.max(0, Math.min(window.innerWidth,  data.x));
-          const cy = Math.max(0, Math.min(window.innerHeight, data.y));
-
-          // WebGazer Kalman filter çıktısını doğrudan kullan — custom filter yok
-          _gazePositionRef.current = { x: cx, y: cy };
-
-          // React state: 3px deadzone (re-render spam engeller, cursor etkilenmez)
-          const dx = Math.abs(cx - lastGazeRef.current.x);
-          const dy = Math.abs(cy - lastGazeRef.current.y);
+          // React state path: 3 px threshold prevents 30 fps re-render cascade
+          const dx = Math.abs(x - lastGazeRef.current.x);
+          const dy = Math.abs(y - lastGazeRef.current.y);
           if (dx > 3 || dy > 3) {
-            lastGazeRef.current = { x: cx, y: cy };
-            setGazePoint({ x: cx, y: cy });
+            lastGazeRef.current = { x, y };
+            setGazePoint({ x, y });
           }
         })
         .saveDataAcrossSessions(isCalibrated)
@@ -113,58 +98,47 @@ export function useWebGazer() {
         .showFaceFeedbackBox(false)
         .begin();
 
-      // Demo davranışı: WebGazer'ın kendi Kalman filtresi aktif
-      // Bu, custom EMA/MA pipeline'ın yerini alır — demo sayfasıyla birebir
+      // Same as demo page: Kalman filter on. We use our own cursor so dot off.
       try { wg.applyKalmanFilter(true); } catch (_) {}
-
       wg.showPredictionPoints(false);
-      // WebGazer elementi ilk 2s içinde oluşturur; biraz bekleyip gizle, sonra seyrek denetle.
-      setTimeout(hideWgElements, 200);
-      setTimeout(hideWgElements, 800);
-      hideIntervalRef.current = setInterval(hideWgElements, 3000);
 
-      initialised.current = true;
+      // WebGazer sometimes recreates its own DOM; hide it when it does.
+      setTimeout(hideWgUI, 200);
+      setTimeout(hideWgUI, 800);
+      hideIntervalRef.current = setInterval(hideWgUI, 3000);
+
       setStatus('ready');
-      startFpsCounter();
+      return true;
     } catch (err) {
-      console.error('[useWebGazer] init error:', err);
+      _wgStarted = false;
+      console.error('[WebGazer] init error:', err);
       setStatus('error');
+      return false;
     }
-  }, [hideWgElements, startFpsCounter]);
+  }, [hideWgUI]);
 
+  // ── calibration helpers ───────────────────────────────────────────────────
   const clearCalibrationData = useCallback(() => {
     window.webgazer?.clearData();
     localStorage.removeItem('webgazerGlobalData');
-    errorsRef.current = [];
     lastGazeRef.current = { x: -999, y: -999 };
-    setAccuracy(0);
   }, []);
 
-  const recordCalibrationPoint = useCallback((screenX, screenY) => {
-    const wg = window.webgazer;
-    if (!wg) return;
-    if (typeof wg.recordScreenPosition === 'function') {
-      wg.recordScreenPosition(screenX, screenY, 'click');
-    }
+  const recordCalibrationPoint = useCallback((x, y) => {
+    window.webgazer?.recordScreenPosition?.(x, y, 'click');
   }, []);
 
-  const updateAccuracy = useCallback((predictedX, predictedY, targetX, targetY) => {
-    const err  = Math.sqrt((predictedX - targetX) ** 2 + (predictedY - targetY) ** 2);
-    errorsRef.current.push(err);
-    if (errorsRef.current.length > 30) errorsRef.current.shift();
-    const diag = Math.sqrt(window.innerWidth ** 2 + window.innerHeight ** 2);
-    const avg  = errorsRef.current.reduce((a, b) => a + b, 0) / errorsRef.current.length;
-    setAccuracy(Math.max(0, Math.min(100, Math.round(100 - (avg / diag) * 200))));
-  }, []);
-
+  // ── cleanup ───────────────────────────────────────────────────────────────
   useEffect(() => {
+    // Pause WebGazer when the browser tab/window closes, not on component cleanup.
+    // Pausing on component cleanup breaks route-change + remount scenarios.
+    const onUnload = () => { try { window.webgazer?.pause(); } catch (_) {} };
+    window.addEventListener('beforeunload', onUnload);
+
     return () => {
-      clearInterval(fpsTimer.current);
+      window.removeEventListener('beforeunload', onUnload);
       clearInterval(hideIntervalRef.current);
-      clearTimeout(faceLostTimer.current);
-      if (initialised.current) {
-        try { window.webgazer?.pause(); } catch (_) {}
-      }
+      clearTimeout(faceTimerRef.current);
     };
   }, []);
 
@@ -172,11 +146,11 @@ export function useWebGazer() {
     status,
     gazePoint,
     faceDetected,
-    fps,
-    accuracy,
+    fps:      0, // removed — was causing 1 Hz re-renders
+    accuracy: 0, // removed — was causing extra state churn
     init,
     clearCalibrationData,
     recordCalibrationPoint,
-    updateAccuracy,
+    updateAccuracy: () => {},
   };
 }

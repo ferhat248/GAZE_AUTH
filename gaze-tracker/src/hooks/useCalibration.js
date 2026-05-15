@@ -30,12 +30,15 @@ export function useCalibration({ recordCalibrationPoint, updateAccuracy }) {
     const pt  = CALIBRATION_POINTS[pointIndex];
     const px  = ptToPx(pt);
 
-    // Demo davranışı: tıklama sonrası göz noktaya iyice oturduğunda 3 sample kaydet.
-    // Tıklama motor hareketi gözü anlık kaydırabilir; kısa gecikmeyle stabil örnekler alınır.
-    // Toplam: 3 sample/tık × 5 tık/nokta × 9 nokta = 135 sample (demoya kıyasla 3×).
-    setTimeout(() => recordCalibrationPoint(px.x, px.y),  30);
-    setTimeout(() => recordCalibrationPoint(px.x, px.y),  80);
-    setTimeout(() => recordCalibrationPoint(px.x, px.y), 130);
+    // 5 samples per click, starting at 60ms so the eye has settled on the target.
+    // Spread over 280ms captures the gaze as it stabilizes — early samples would catch
+    // the motor saccade from the click, late samples catch steady fixation.
+    // Total: 5 × 5 × 9 = 225 samples for a more reliable regression model.
+    setTimeout(() => recordCalibrationPoint(px.x, px.y),  60);
+    setTimeout(() => recordCalibrationPoint(px.x, px.y), 110);
+    setTimeout(() => recordCalibrationPoint(px.x, px.y), 160);
+    setTimeout(() => recordCalibrationPoint(px.x, px.y), 220);
+    setTimeout(() => recordCalibrationPoint(px.x, px.y), 280);
 
     const prev    = clickMap[pointIndex] ?? 0;
     const next    = prev + 1;

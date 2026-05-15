@@ -15,19 +15,22 @@ export default function EyeTracker() {
     updateAccuracy:         wg.updateAccuracy,
   });
 
-  // splash | loading | calibrating | mode-select | photo | tracking | forensic
-  const [appPhase, setAppPhase] = useState('splash');
+  // loading | calibrating | mode-select | photo | tracking | forensic
+  const [appPhase, setAppPhase] = useState('loading');
 
-  const handleStart = async () => {
-    setAppPhase('loading');
-    await wg.init(cal.isCalibrated);
-    if (cal.isCalibrated) {
-      setAppPhase('mode-select');
-    } else {
-      cal.start();
-      setAppPhase('calibrating');
-    }
-  };
+  // Site açılır açılmaz tracking başlar
+  useEffect(() => {
+    (async () => {
+      const ok = await wg.init(cal.isCalibrated);
+      if (!ok) return; // init başarısız — loading ekranı error mesajıyla kalır
+      if (cal.isCalibrated) {
+        setAppPhase('mode-select');
+      } else {
+        cal.start();
+        setAppPhase('calibrating');
+      }
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (cal.phase === 'done') setAppPhase('mode-select');
@@ -39,43 +42,6 @@ export default function EyeTracker() {
     cal.start();
     setAppPhase('calibrating');
   };
-
-  /* ── Splash ── */
-  if (appPhase === 'splash') {
-    return (
-      <div className="fixed inset-0 flex items-center justify-center" style={{ background: '#050510' }}>
-        <div style={{
-          position: 'fixed', inset: 0, pointerEvents: 'none',
-          background: 'radial-gradient(ellipse 110% 65% at 8% -12%, rgba(99,102,241,0.16) 0%, transparent 65%), radial-gradient(ellipse 80% 55% at 92% 112%, rgba(139,92,246,0.13) 0%, transparent 65%)',
-        }} />
-        <div className="scan-line" />
-        <div className="relative z-10 text-center p-10 rounded-3xl max-w-md w-11/12" style={{
-          background: 'rgba(13,13,32,0.95)', border: '1px solid rgba(255,255,255,0.08)',
-          backdropFilter: 'blur(16px)', boxShadow: '0 0 60px rgba(99,102,241,0.1)',
-          animation: 'fadeIn 0.4s ease-out',
-        }}>
-          <div className="text-6xl mb-4" style={{ animation: 'pulseGlow 2s ease-in-out infinite' }}>👁️</div>
-          <h1 className="text-3xl font-black mb-2" style={{
-            background: 'linear-gradient(135deg, #818cf8, #a78bfa, #67e8f9)',
-            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
-          }}>
-            GazeTracker
-          </h1>
-          <p className="text-sm mb-8 leading-relaxed" style={{ color: '#94a3b8' }}>
-            Göz hareketinizle ekranı kontrol edin.<br />
-            WebGazer.js destekli gerçek zamanlı göz takibi.
-          </p>
-          <button
-            onClick={handleStart}
-            className="w-full py-3 rounded-2xl font-bold text-white text-base transition-transform hover:scale-[1.02]"
-            style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', boxShadow: '0 4px 20px rgba(99,102,241,0.45)' }}
-          >
-            Başlat →
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   /* ── Loading ── */
   if (appPhase === 'loading') {

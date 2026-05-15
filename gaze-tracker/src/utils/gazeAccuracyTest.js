@@ -5,8 +5,8 @@ import {
   filterStableSamples, computePointStats, computeOverallResult,
 } from './accuracyValidation';
 
-const WAIT_MS   = 1000;   // kullanıcının noktaya bakması için bekleme süresi
-const SAMPLE_MS = 1500;   // örnek toplama süresi
+const WAIT_MS   = 1500;   // fixation settle time before sampling begins
+const SAMPLE_MS = 3000;   // longer window for single-point: ~60 samples at 50ms interval
 
 // step: idle → waiting → sampling → (next point) → results
 export function useGazeAccuracyTest({ active }) {
