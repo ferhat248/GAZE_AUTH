@@ -1,40 +1,23 @@
 import React, { useEffect, useRef, memo } from 'react';
 import { _gazePositionRef } from '../hooks/useWebGazer';
 
-const SIZE     = 20;
-const HALF     = SIZE / 2;
-const ALPHA    = 0.65;  // EMA convergence: 0.65 → ~2 frame lag @ 60fps, noticeably less jitter
-const DEADZONE = 4;     // px: wider quiet zone suppresses more residual micro-motion
+const SIZE = 20;
+const HALF = SIZE / 2;
 
 function GazeCursor({ faceDetected, visible }) {
   const elRef = useRef(null);
 
-  // RAF loop: lightweight EMA on display position only.
-  // _gazePositionRef stays raw — GazePassword and other consumers are unaffected.
+  // RAF loop: direct Kalman output → cursor position.
+  // WebGazer's applyKalmanFilter(true) already smooths the signal.
+  // Adding a second EMA on top makes the cursor noticeably laggier than the demo.
   useEffect(() => {
     if (!elRef.current) return;
     let rafId;
     const el = elRef.current;
 
-    let smX = 0, smY = 0; // EMA-smoothed position
-    let dpX = 0, dpY = 0; // last written display position
-
     const loop = () => {
       const { x, y } = _gazePositionRef.current;
-
-      // EMA: smoothed position moves ALPHA of the way to raw each frame
-      smX += ALPHA * (x - smX);
-      smY += ALPHA * (y - smY);
-
-      // Deadzone on smoothed output: ignore micro-residual movement
-      const dx = smX - dpX;
-      const dy = smY - dpY;
-      if (dx * dx + dy * dy > DEADZONE * DEADZONE) {
-        dpX = smX;
-        dpY = smY;
-        el.style.transform = `translate3d(${dpX - HALF}px,${dpY - HALF}px,0)`;
-      }
-
+      el.style.transform = `translate3d(${x - HALF}px,${y - HALF}px,0)`;
       rafId = requestAnimationFrame(loop);
     };
 
@@ -70,8 +53,6 @@ function GazeCursor({ faceDetected, visible }) {
   );
 }
 
-// Re-render only when face-detection state or visibility changes.
-// Gaze position is updated via direct DOM manipulation in the RAF loop.
 export default memo(GazeCursor, (prev, next) =>
   prev.faceDetected === next.faceDetected && prev.visible === next.visible
 );

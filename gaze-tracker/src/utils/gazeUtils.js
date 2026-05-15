@@ -11,11 +11,12 @@ export function calcAccuracy(errors) {
   return clamp(Math.round(100 - (avg / diag) * 100 * 4), 0, 100);
 }
 
-// 9 kalibrasyon noktası (ekran yüzdesi olarak)
+// 9 kalibrasyon noktası — WebGazer demo ile aynı %5/%95 konumlar
+// %10/%90 yerine %5/%95: ekran kenarlarını daha iyi kapsar → daha güçlü regresyon modeli
 export const CALIBRATION_POINTS = [
-  { x: 0.1, y: 0.1 }, { x: 0.5, y: 0.1 }, { x: 0.9, y: 0.1 },
-  { x: 0.1, y: 0.5 }, { x: 0.5, y: 0.5 }, { x: 0.9, y: 0.5 },
-  { x: 0.1, y: 0.9 }, { x: 0.5, y: 0.9 }, { x: 0.9, y: 0.9 },
+  { x: 0.05, y: 0.05 }, { x: 0.5, y: 0.05 }, { x: 0.95, y: 0.05 },
+  { x: 0.05, y: 0.5  }, { x: 0.5, y: 0.5  }, { x: 0.95, y: 0.5  },
+  { x: 0.05, y: 0.95 }, { x: 0.5, y: 0.95 }, { x: 0.95, y: 0.95 },
 ];
 
 // Piksel koordinatına çevir (üst bar yüksekliği çıkarılır)

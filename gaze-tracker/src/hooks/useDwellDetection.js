@@ -18,9 +18,6 @@ export function useDwellDetection({ gazePoint, isActive }) {
   const isActiveRef  = useRef(isActive);
   const animFrameRef = useRef(null);
 
-  // Debug: her ~1 saniyede bir dwellTime logla
-  const lastLogRef = useRef(0);
-
   // UI için state - sadece görsel güncellemeler
   const [activeRegion, setActiveRegion]   = useState(null);
   const [dwellProgress, setDwellProgress] = useState(0);
@@ -52,7 +49,6 @@ export function useDwellDetection({ gazePoint, isActive }) {
           navigationTriggeredRef.current = false;
           candidateCardRef.current      = null;
           candidateStartRef.current     = null;
-          console.log('[GazeNav] activeCard:', region);
           setActiveRegion(region);
           setDwellProgress(0);
           setHoveredRegion(null);
@@ -73,15 +69,8 @@ export function useDwellDetection({ gazePoint, isActive }) {
 
         if (elapsed >= HOVER_MS) setHoveredRegion(region);
 
-        // Periyodik dwellTime logu (her ~1 saniye)
-        if (now - lastLogRef.current > 1000) {
-          console.log('[GazeNav] dwellTime:', Math.round(elapsed), 'ms  card:', region);
-          lastLogRef.current = now;
-        }
-
         if (elapsed >= CLICK_MS) {
           navigationTriggeredRef.current = true;
-          console.log('[GazeNav] navigationTriggered:', region, '| dwellTime:', elapsed, 'ms');
           setFiredRegion(activeCardRef.current);
           setActiveRegion(null);
           setDwellProgress(0);
@@ -102,7 +91,6 @@ export function useDwellDetection({ gazePoint, isActive }) {
           navigationTriggeredRef.current = false;
           candidateCardRef.current       = null;
           candidateStartRef.current      = null;
-          console.log('[GazeNav] activeCard:', region);
           setActiveRegion(region);
           setDwellProgress(0);
           setHoveredRegion(null);

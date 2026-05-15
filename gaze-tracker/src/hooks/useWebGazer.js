@@ -92,7 +92,7 @@ export function useWebGazer() {
             setGazePoint({ x, y });
           }
         })
-        .saveDataAcrossSessions(isCalibrated)
+        .saveDataAcrossSessions(true)   // demo: always true — model data must persist across sessions
         .showVideo(false)
         .showFaceOverlay(false)
         .showFaceFeedbackBox(false)
