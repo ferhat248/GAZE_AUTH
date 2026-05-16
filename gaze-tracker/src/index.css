@@ -23,8 +23,10 @@ html, body, #root {
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
 }
 
-/* WebGazer elementlerini gizle */
-#webgazerVideoFeed,
+/* WebGazer overlay elementlerini gizle.
+   NOT: #webgazerVideoFeed buraya dahil DEĞİL.
+   hideWgUI() ve useCameraPreview() video elementini inline style ile yönetir.
+   CSS'te display:none koymak MediaPipe frame loop'unu kırabilir. */
 #webgazerFaceOverlay,
 #webgazerFaceFeedbackBox,
 #webgazerGazeDot { display: none !important; }
@@ -157,4 +159,11 @@ html, body, #root {
   letter-spacing: 0.06em;
   animation: forensicTicker 70s linear infinite;
   will-change: transform;
+}
+#webgazerVideoContainer,
+#webgazerVideoFeed,
+#webgazerFaceOverlay,
+#webgazerFaceFeedbackBox,
+canvas {
+  pointer-events: none !important;
 }

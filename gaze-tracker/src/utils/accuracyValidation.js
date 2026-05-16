@@ -37,15 +37,15 @@ export function computePointStats(targetPx, samples) {
   return { avgError: Math.round(avg), stdDev: Math.round(Math.sqrt(variance)), count: samples.length };
 }
 
-// Tüm noktalardan genel sonuç
+// WebGazer demo formülü: accuracy = 100 - (avgDist / halfWindowHeight * 100)
 export function computeOverallResult(allStats) {
   const valid = allStats.filter(s => s.count > 0);
   if (!valid.length) return null;
+  const halfWindowHeight = window.innerHeight / 2;
   const meanError  = valid.reduce((a, s) => a + s.avgError, 0) / valid.length;
-  const meanStdDev = valid.reduce((a, s) => a + s.stdDev,  0) / valid.length;
-  const diag = Math.sqrt(window.innerWidth ** 2 + window.innerHeight ** 2);
-  const accuracy  = Math.max(0, Math.min(100, Math.round(100 - (meanError  / diag) * 350)));
-  const stability = Math.max(0, Math.min(100, Math.round(100 - (meanStdDev / diag) * 550)));
+  const meanStdDev = valid.reduce((a, s) => a + (s.stdDev || 0), 0) / valid.length;
+  const accuracy  = Math.round(100 - (meanError  / halfWindowHeight * 100));
+  const stability = Math.max(0, Math.min(100, Math.round(100 - (meanStdDev / halfWindowHeight * 100))));
   return { accuracy, stability, meanError: Math.round(meanError), pointStats: allStats };
 }
 

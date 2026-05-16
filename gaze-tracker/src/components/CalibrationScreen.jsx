@@ -1,115 +1,147 @@
 import React, { useEffect, useRef } from 'react';
-import { ptToPx } from '../utils/gazeUtils';
 import { useGazeAccuracyTest } from '../utils/gazeAccuracyTest';
-import {
-  VALIDATION_POINTS, valPtToPx,
-  accuracyGrade, stabilityGrade,
-} from '../utils/accuracyValidation';
+import { VALIDATION_POINTS, valPtToPx, accuracyGrade, stabilityGrade } from '../utils/accuracyValidation';
 import { _gazePositionRef } from '../hooks/useWebGazer';
 
-const DOT_LIFE  = 2500;  // ms a prediction dot lives
-const DOT_RATE  = 33;    // ms between dots (~30 dots/sec, matches WebGazer prediction rate)
-const PREC_R    = 100;   // px radius used for live precision %
+const CENTER_INDEX = 4;
+const DOT_LIFE     = 3000; // ms — validation scatter yaşam süresi
+const DOT_RATE     = 40;   // ms — scatter örnekleme aralığı
 
-function ProgressRing({ progress, size = 40, stroke = 3, color = '#fbbf24' }) {
-  const r   = (size - stroke * 2) / 2;
-  const c   = 2 * Math.PI * r;
-  const off = c - (progress / 100) * c;
+// ── WebGazer demo birebir: 10px kırmızı prediction noktası ─────────────────
+// webgazer.showPredictionPoints(true) davranışı — RAF ile native hız
+function GazeDot() {
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let rafId;
+    let shown = false;
+
+    const loop = () => {
+      const { x, y } = _gazePositionRef.current;
+      if (x !== 0 || y !== 0) {
+        // WebGazer GazeDot: left = x - 5, top = y - 5 (5 = yarıçap)
+        el.style.transform = `translate3d(${x - 5}px,${y - 5}px,0)`;
+        if (!shown) {
+          el.style.opacity = '1';
+          shown = true;
+        }
+      }
+      rafId = requestAnimationFrame(loop);
+    };
+
+    rafId = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rafId);
+  }, []);
+
   return (
-    <svg width={size} height={size} style={{ position: 'absolute', top: 0, left: 0, transform: 'rotate(-90deg)' }}>
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={stroke} />
-      <circle
-        cx={size / 2} cy={size / 2} r={r}
-        fill="none" stroke={color} strokeWidth={stroke}
-        strokeLinecap="round"
-        strokeDasharray={c}
-        strokeDashoffset={off}
-        style={{ transition: 'stroke-dashoffset 0.1s linear' }}
-      />
-    </svg>
+    <div
+      ref={ref}
+      style={{
+        position:      'fixed',
+        left:          0,
+        top:           0,
+        width:         10,
+        height:        10,
+        borderRadius:  '100%',
+        backgroundColor: 'red', // WebGazer demo kırmızısı (#f00)
+        pointerEvents: 'none',
+        zIndex:        9999,
+        willChange:    'transform',
+        opacity:       0, // ilk prediction gelince görünür olur
+      }}
+    />
   );
 }
 
-export default function CalibrationScreen({ cal }) {
+// ── Kalibrasyon sırasında kamera önizlemesi (WebGazer demo davranışı) ───────
+// DOM üzerinden WebGazer'ın video elementini köşede gösterir
+function useCameraPreview(active, faceDetected) {
+  useEffect(() => {
+    if (!active) return;
+
+    const SHOW_STYLE =
+      'position:fixed!important;bottom:14px!important;right:14px!important;' +
+      'width:136px!important;height:102px!important;' +
+      'border-radius:8px!important;opacity:0.88!important;' +
+      'pointer-events:none!important;z-index:6!important;display:block!important;' +
+      'transform:scaleX(-1)!important;';   // ayna görünüm (selfie)
+
+    const HIDE_STYLE =
+      'position:fixed!important;top:-9999px!important;left:-9999px!important;' +
+      'width:320px!important;height:240px!important;' +
+      'pointer-events:none!important;z-index:-1!important;display:block!important;';
+
+    const video = document.getElementById('webgazerVideoFeed');
+    if (video) video.style.cssText = SHOW_STYLE;
+
+    return () => {
+      if (video) video.style.cssText = HIDE_STYLE;
+    };
+  }, [active]);
+
+  // Yüz algılama durumuna göre çerçeve rengi
+  useEffect(() => {
+    if (!active) return;
+    const video = document.getElementById('webgazerVideoFeed');
+    if (!video) return;
+    video.style.setProperty(
+      'outline',
+      faceDetected
+        ? '2px solid rgba(34,197,94,0.75)'   // yeşil — yüz algılandı
+        : '2px solid rgba(100,116,139,0.5)',  // gri — bekleniyor
+      'important',
+    );
+  }, [active, faceDetected]);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+export default function CalibrationScreen({ cal, faceDetected = false }) {
   const {
-    phase, activeIndex, clickMap, doneSet, progress,
+    phase, clickMap, centerVisible,
     points, clicksPerPoint, start, handleDotClick, finishValidation,
   } = cal;
 
   const valTest = useGazeAccuracyTest({ active: phase === 'validating' });
 
-  // Canvas-based scatter system refs
-  const canvasRef  = useRef(null);
-  const dotPoolRef = useRef([]);   // { x, y, t }[]
-  const liveAccRef = useRef(null); // DOM span for live precision %
+  // Kamera önizlemesi — sadece active calibration sırasında
+  useCameraPreview(phase === 'active', faceDetected);
 
-  // ── Validation scatter: real gaze predictions plotted as blue dots ──────────
-  // Matches WebGazer demo behaviour: every prediction → dot, dots fade over DOT_LIFE ms
+  // Validation canvas
+  const canvasRef  = useRef(null);
+  const dotPoolRef = useRef([]);
+
+  // ── Validation scatter (WebGazer demo: mavi prediction scatter) ───────────
   useEffect(() => {
     if (phase !== 'validating' || valTest.step === 'results') return;
 
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     canvas.width  = window.innerWidth;
     canvas.height = window.innerHeight;
     const ctx = canvas.getContext('2d');
-
-    const safeIdx    = Math.min(valTest.ptIndex, VALIDATION_POINTS.length - 1);
-    const isSampling = valTest.step === 'sampling';
 
     dotPoolRef.current = [];
     let rafId, lastDotT = 0;
 
     const loop = (now) => {
-      // ── Add a new prediction dot at the current raw gaze position ──────────
-      // DOT_RATE gate prevents 60-dot/sec spam; actual WebGazer fires ~15-30/sec
       if (now - lastDotT >= DOT_RATE) {
         const { x, y } = _gazePositionRef.current;
-        dotPoolRef.current.push({ x, y, t: now });
+        if (x !== 0 || y !== 0) dotPoolRef.current.push({ x, y, t: now });
         lastDotT = now;
       }
 
-      // ── Remove expired dots ─────────────────────────────────────────────────
-      const alive = dotPoolRef.current.filter(d => now - d.t < DOT_LIFE);
-      dotPoolRef.current = alive;
-
-      // ── Draw ────────────────────────────────────────────────────────────────
+      dotPoolRef.current = dotPoolRef.current.filter(d => now - d.t < DOT_LIFE);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      for (const dot of alive) {
-        const age   = now - dot.t;
-        const life  = 1 - age / DOT_LIFE;         // 1→0 over lifetime
-        const alpha = life * 0.85;
-        const r     = Math.max(2.5, 5 * (0.6 + 0.4 * life)); // shrinks slightly with age
-
-        // Glow halo
+      for (const dot of dotPoolRef.current) {
+        const age   = (now - dot.t) / DOT_LIFE;
+        const alpha = (1 - age) * 0.92;
         ctx.beginPath();
-        ctx.arc(dot.x, dot.y, r + 4, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(59,130,246,${alpha * 0.2})`;
+        ctx.arc(dot.x, dot.y, 5, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(59,130,246,${alpha})`;
         ctx.fill();
-
-        // Core prediction dot — matches WebGazer demo's blue dots
-        ctx.beginPath();
-        ctx.arc(dot.x, dot.y, r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(96,165,250,${alpha})`;
-        ctx.fill();
-      }
-
-      // ── Live precision: % of recent dots within PREC_R px of target ─────────
-      if (liveAccRef.current) {
-        if (isSampling && alive.length >= 5) {
-          const tpx    = valPtToPx(VALIDATION_POINTS[safeIdx]);
-          const recent = alive.filter(d => now - d.t < 2000);
-          const within = recent.filter(d => {
-            const dx = d.x - tpx.x, dy = d.y - tpx.y;
-            return dx * dx + dy * dy < PREC_R * PREC_R;
-          });
-          liveAccRef.current.textContent =
-            recent.length >= 5 ? `${Math.round(within.length / recent.length * 100)}%` : '—';
-        } else {
-          liveAccRef.current.textContent = '';
-        }
       }
 
       rafId = requestAnimationFrame(loop);
@@ -117,7 +149,7 @@ export default function CalibrationScreen({ cal }) {
 
     rafId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(rafId);
-  }, [phase, valTest.step, valTest.ptIndex]);
+  }, [phase, valTest.step]);
 
   /* ── PHASE: idle ─────────────────────────────────────────────────────────── */
   if (phase === 'idle') {
@@ -125,9 +157,10 @@ export default function CalibrationScreen({ cal }) {
       <div className="fixed inset-0 flex items-center justify-center z-40" style={{ background: '#050510' }}>
         <div style={{
           position: 'fixed', inset: 0, pointerEvents: 'none',
-          background: 'radial-gradient(ellipse 110% 65% at 8% -12%, rgba(99,102,241,0.16) 0%, transparent 65%), radial-gradient(ellipse 80% 55% at 92% 112%, rgba(139,92,246,0.13) 0%, transparent 65%)',
+          background:
+            'radial-gradient(ellipse 110% 65% at 8% -12%, rgba(99,102,241,0.16) 0%, transparent 65%),' +
+            'radial-gradient(ellipse 80% 55% at 92% 112%, rgba(139,92,246,0.13) 0%, transparent 65%)',
         }} />
-        <div className="scan-line" />
         <div className="relative z-10 text-center p-10 rounded-3xl max-w-md w-11/12" style={{
           background: 'rgba(13,13,32,0.95)', border: '1px solid rgba(255,255,255,0.08)',
           backdropFilter: 'blur(16px)', boxShadow: '0 0 60px rgba(99,102,241,0.1)',
@@ -140,14 +173,14 @@ export default function CalibrationScreen({ cal }) {
           }}>GazeTracker</h1>
           <p className="text-sm mb-8 leading-relaxed" style={{ color: '#94a3b8' }}>
             Göz takibi için önce 9 noktalı kalibrasyon gereklidir.<br />
-            Her sarı noktaya <strong className="text-white">bakarak</strong> üzerine{' '}
+            Her noktaya <strong className="text-white">bakarak</strong> üzerine{' '}
             <strong className="text-white">5 kez tıklayın</strong>.
           </p>
           <div className="flex flex-col gap-2 mb-8 text-left">
             {[
               '① Kameraya izin verin',
-              '② Her noktaya bakın ve 5 kez tıklayın',
-              '③ Kalibrasyon sonrası doğruluk testi yapılır',
+              '② 8 dış noktaya herhangi sırayla 5\'er kez tıklayın',
+              '③ Merkez nokta son olarak belirir — onu da tıklayın',
             ].map((s, i) => (
               <div key={i} className="px-3 py-2 rounded-xl text-sm" style={{
                 background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', color: '#94a3b8',
@@ -173,13 +206,9 @@ export default function CalibrationScreen({ cal }) {
     if (valTest.step === 'results') {
       const res    = valTest.result;
       if (!res) return null;
-      const aGrade     = accuracyGrade(res.accuracy);
-      const sGrade     = stabilityGrade(res.stability);
-      const isGood     = res.accuracy >= 65;
-      const validPts   = res.pointStats.filter(s => s.count > 0);
-      const avgSamples = validPts.length
-        ? validPts.reduce((a, s) => a + s.count, 0) / validPts.length : 0;
-      const confidence = Math.min(100, Math.round(avgSamples / 30 * 100));
+      const aGrade = accuracyGrade(res.accuracy);
+      const sGrade = stabilityGrade(res.stability);
+      const isGood = res.accuracy >= 50;
 
       return (
         <div style={{
@@ -216,9 +245,8 @@ export default function CalibrationScreen({ cal }) {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '.5rem', marginBottom: '1.2rem' }}>
               {[
-                ['Ortalama Hata', `${res.meanError}px`, '#f8fafc'],
-                ['Stabilite',    `${res.stability}% — ${sGrade.label}`, sGrade.color],
-                ['Güven Skoru',  `${confidence}%`, confidence >= 70 ? '#10b981' : confidence >= 40 ? '#f59e0b' : '#ef4444'],
+                ['Ort. Hata',  `${res.meanError}px`,             '#f8fafc'],
+                ['Stabilite', `${res.stability}% — ${sGrade.label}`, sGrade.color],
               ].map(([label, value, color]) => (
                 <div key={label} style={{
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -232,21 +260,14 @@ export default function CalibrationScreen({ cal }) {
             </div>
 
             <div style={{ display: 'flex', gap: '.6rem' }}>
-              {!isGood && (
-                <button
-                  onClick={() => {
-                    window.webgazer?.clearData();
-                    localStorage.removeItem('webgazerGlobalData');
-                    cal.reset();
-                    cal.start();
-                  }}
-                  style={{
-                    flex: 1, padding: '.6rem', borderRadius: 12, cursor: 'pointer',
-                    background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
-                    color: '#f87171', fontWeight: 700, fontSize: '.8rem',
-                  }}
-                >↺ Yeniden Kalibre Et</button>
-              )}
+              <button
+                onClick={() => { window.webgazer?.clearData(); localStorage.removeItem('webgazerGlobalData'); cal.reset(); cal.start(); }}
+                style={{
+                  flex: 1, padding: '.6rem', borderRadius: 12, cursor: 'pointer',
+                  background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+                  color: '#f87171', fontWeight: 700, fontSize: '.8rem',
+                }}
+              >↺ Yeniden Kalibre Et</button>
               <button
                 onClick={finishValidation}
                 style={{
@@ -268,189 +289,124 @@ export default function CalibrationScreen({ cal }) {
       );
     }
 
-    /* Live validation screen (waiting / sampling) */
-    const safeIdx   = Math.min(valTest.ptIndex, VALIDATION_POINTS.length - 1);
-    const currentPt = VALIDATION_POINTS[safeIdx];
-    const targetPx  = valPtToPx(currentPt);
-    const sampling  = valTest.step === 'sampling';
+    /* Validation — merkez nokta + scatter + live gaze dot */
+    const targetPx = valPtToPx(VALIDATION_POINTS[0]);
+    const sampling = valTest.step === 'sampling';
 
     return (
-      <div style={{ position: 'fixed', inset: 0, background: '#06060f', zIndex: 40 }}>
+      <div style={{ position: 'fixed', inset: 0, background: '#06060f', zIndex: 40, cursor: 'none' }}>
 
-        {/* Top bar — single-point layout */}
+        {/* Canvas: mavi prediction scatter dots */}
+        <canvas ref={canvasRef} style={{ position: 'fixed', left: 0, top: 0, pointerEvents: 'none', zIndex: 6 }} />
+
+        {/* Kırmızı live prediction dot (WebGazer demo gibi) */}
+        <GazeDot />
+
+        {/* Üst talimat */}
         <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          padding: '.7rem 1.25rem',
-          background: 'rgba(4,4,14,0.92)', backdropFilter: 'blur(8px)',
-          borderBottom: '1px solid rgba(255,255,255,0.06)',
-          gap: '.75rem',
+          position: 'fixed', top: 20, left: '50%', transform: 'translateX(-50%)',
+          color: '#f8fafc', fontSize: '0.82rem', textAlign: 'center',
+          background: 'rgba(0,0,0,0.55)', padding: '0.4rem 1.1rem', borderRadius: 20,
+          pointerEvents: 'none', zIndex: 50, whiteSpace: 'nowrap',
         }}>
-          <span style={{ fontWeight: 700, fontSize: '.88rem' }}>🎯 Doğruluk Testi</span>
-          <div style={{
-            width: 8, height: 8, borderRadius: '50%',
-            background: sampling ? '#fbbf24' : 'rgba(255,255,255,0.2)',
-            boxShadow: sampling ? '0 0 6px rgba(251,191,36,0.7)' : 'none',
-            transition: 'background 0.3s, box-shadow 0.3s',
-          }} />
-          <span style={{ fontSize: '.78rem', color: sampling ? '#fbbf24' : '#64748b', transition: 'color 0.3s' }}>
-            {sampling ? 'Örnekleniyor' : 'Hazırlanıyor'}
-          </span>
+          {sampling ? 'Ölçülüyor — mavi noktaları izleyin' : 'Merkezdeki noktaya bakın ve hareketsiz durun'}
         </div>
 
-        {/* Canvas: real-time gaze prediction scatter dots */}
-        <canvas
-          ref={canvasRef}
-          style={{ position: 'fixed', left: 0, top: 0, pointerEvents: 'none', zIndex: 6 }}
-        />
-
-        {/* Yellow target — WebGazer demo style */}
+        {/* Merkez hedef nokta */}
         <div style={{
           position: 'fixed',
           left: targetPx.x, top: targetPx.y,
           transform: 'translate(-50%, -50%)',
-          zIndex: 10,
-          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14,
-          pointerEvents: 'none',
+          zIndex: 10, pointerEvents: 'none',
         }}>
           <div style={{
-            position: 'relative', width: 70, height: 70,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            {/* Pulsing ring */}
-            <div style={{
-              position: 'absolute', inset: 0, borderRadius: '50%',
-              border: '2px solid rgba(251,191,36,0.55)',
-              animation: 'valPulse 1.4s ease-out infinite',
-            }} />
-            {/* Main circle */}
-            <div style={{
-              width: 52, height: 52, borderRadius: '50%',
-              background: 'rgba(251,191,36,0.12)',
-              border: '3px solid #fbbf24',
-              boxShadow: sampling
-                ? '0 0 32px rgba(251,191,36,0.8), 0 0 8px rgba(251,191,36,0.5)'
-                : '0 0 16px rgba(251,191,36,0.35)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              transition: 'box-shadow 0.3s',
-            }}>
-              {/* Center dot */}
-              <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#fbbf24' }} />
-            </div>
-          </div>
-
+            position: 'absolute', width: 60, height: 60, borderRadius: '50%',
+            border: '2px solid rgba(251,191,36,0.5)',
+            top: '50%', left: '50%',
+            transform: 'translate(-50%, -50%)',
+            animation: 'valPulse 1.6s ease-out infinite',
+            pointerEvents: 'none',
+          }} />
           <div style={{
-            padding: '.28rem .8rem', borderRadius: 100,
-            background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(8px)',
-            border: '1px solid rgba(255,255,255,0.09)',
-            fontSize: '.76rem', fontWeight: 600, color: '#94a3b8',
-            whiteSpace: 'nowrap',
-          }}>
-            {sampling ? '⚡ Ölçülüyor...' : `${currentPt.label} noktasına bakın`}
-          </div>
-        </div>
-
-        {/* Bottom: live precision from real scatter data */}
-        <div style={{
-          position: 'fixed', bottom: '1.5rem', left: '50%', transform: 'translateX(-50%)',
-          display: 'flex', alignItems: 'center', gap: '.5rem',
-          padding: '.38rem .9rem', borderRadius: 100,
-          background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.07)',
-          fontSize: '.72rem', color: '#64748b', whiteSpace: 'nowrap',
-        }}>
-          {sampling
-            ? <><span>Hassasiyet (100px içinde):</span><span ref={liveAccRef} style={{ color: '#60a5fa', fontWeight: 700, fontSize: '.8rem', minWidth: 30, display: 'inline-block' }} /></>
-            : <span ref={liveAccRef}>Hazırlanıyor — noktaya bakın...</span>
-          }
+            width: 20, height: 20, borderRadius: '50%',
+            backgroundColor: 'rgb(222,240,10)',
+            boxShadow: sampling
+              ? '0 0 24px rgba(222,240,10,0.9),0 0 6px rgba(222,240,10,0.6)'
+              : '0 0 12px rgba(222,240,10,0.55)',
+            transition: 'box-shadow 0.3s',
+          }} />
         </div>
 
         <style>{`
           @keyframes valPulse {
-            0%   { transform: scale(1);   opacity: 0.7; }
-            100% { transform: scale(1.9); opacity: 0;   }
+            0%   { transform: translate(-50%,-50%) scale(1);   opacity: 0.7; }
+            100% { transform: translate(-50%,-50%) scale(2.2); opacity: 0;   }
           }
         `}</style>
       </div>
     );
   }
 
-  /* ── PHASE: active (calibration dots) ───────────────────────────────────── */
+  /* ── PHASE: active — WebGazer demo birebir kalibrasyon ──────────────────── */
   return (
-    <div className="fixed inset-0 z-40" style={{
-      background: '#06060f', cursor: 'crosshair',
-      backgroundImage: 'linear-gradient(rgba(99,102,241,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(99,102,241,0.03) 1px, transparent 1px)',
-      backgroundSize: '50px 50px',
-    }}>
-      {/* Top bar */}
-      <div className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-5 py-3" style={{
-        background: 'rgba(4,4,14,0.92)', backdropFilter: 'blur(8px)',
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
+    <div style={{ position: 'fixed', inset: 0, background: '#06060f', cursor: 'crosshair' }}>
+
+      {/* WebGazer demo: 10px kırmızı live prediction dot */}
+      <GazeDot />
+
+      {/* Talimat */}
+      <div style={{
+        position: 'fixed', top: '2%', left: '50%', transform: 'translateX(-50%)',
+        color: 'rgba(255,255,255,0.75)', fontSize: '0.8rem', textAlign: 'center',
+        background: 'rgba(0,0,0,0.45)', padding: '0.35rem 1rem', borderRadius: 20,
+        pointerEvents: 'none', zIndex: 50, whiteSpace: 'nowrap',
       }}>
-        <span className="font-semibold text-sm">🎯 Kalibrasyon</span>
-        <div className="flex items-center gap-3">
-          <span className="text-xs" style={{ color: '#94a3b8' }}>{doneSet.size} / {points.length} nokta</span>
-          <div className="w-36 h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
-            <div className="h-full rounded-full" style={{
-              width: `${progress}%`,
-              background: 'linear-gradient(90deg, #6366f1, #06b6d4)',
-              transition: 'width 0.3s ease',
-            }} />
-          </div>
-          <span className="text-xs font-bold" style={{ color: '#818cf8' }}>{progress}%</span>
-        </div>
+        Her noktaya 5 kez tıklayın — sarıya dönünce tamamdır
       </div>
 
-      {/* Hint */}
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-2 rounded-full text-sm" style={{
-        background: 'rgba(99,102,241,0.14)', border: '1px solid rgba(99,102,241,0.28)', color: '#a5b4fc',
-        whiteSpace: 'nowrap',
+      {/* Kamera önizleme etiketi */}
+      <div style={{
+        position: 'fixed', bottom: 120, right: 14,
+        color: 'rgba(255,255,255,0.45)', fontSize: '0.65rem',
+        pointerEvents: 'none', zIndex: 7, textAlign: 'center', width: 136,
       }}>
-        {phase === 'done'
-          ? '✅ Kalibrasyon tamamlandı!'
-          : `Nokta ${activeIndex + 1} / ${points.length} — ${clicksPerPoint - (clickMap[activeIndex] ?? 0)} tık kaldı`}
+        {faceDetected ? '● Yüz algılandı' : '○ Yüz aranıyor...'}
       </div>
 
-      {/* Calibration dots */}
+      {/* WebGazer demo 9 kalibrasyon noktası */}
       {points.map((pt, i) => {
-        const px     = ptToPx(pt, 48);
-        const clicks = clickMap[i] ?? 0;
-        const done   = doneSet.has(i);
-        const active = i === activeIndex && phase === 'active';
-        const size   = 44;
+        const clicks   = clickMap[i] ?? 0;
+        const done     = clicks >= clicksPerPoint;
+        const isCenter = i === CENTER_INDEX;
+        const visible  = !isCenter || centerVisible;
+
+        if (!visible) return null;
+
+        // WebGazer demo opacity formülü: 0.2 * clicks + 0.2
+        const opacity = Math.min(1, 0.2 * clicks + 0.2);
 
         return (
           <button
             key={i}
             onClick={() => handleDotClick(i)}
-            className={`cal-dot ${active ? 'cal-dot-active' : ''}`}
+            disabled={done}
             style={{
-              left: px.x, top: px.y, width: size, height: size,
-              background: done ? 'rgba(16,185,129,0.25)' : active ? 'rgba(251,191,36,0.2)' : 'rgba(99,102,241,0.08)',
-              border: `3px solid ${done ? '#10b981' : active ? '#fbbf24' : 'rgba(99,102,241,0.3)'}`,
-              boxShadow: done ? '0 0 14px rgba(16,185,129,0.6)' : active ? '0 0 20px rgba(251,191,36,0.7)' : 'none',
-              cursor: done ? 'default' : 'crosshair',
-              pointerEvents: done ? 'none' : 'auto',
+              position:        'fixed',
+              left:            `${pt.x * 100}%`,
+              top:             `${pt.y * 100}%`,
+              transform:       'translate(-50%, -50%)',
+              width:           20,
+              height:          20,
+              borderRadius:    '50%',
+              backgroundColor: done ? 'rgb(222,240,10)' : 'rgb(248,83,83)',
+              opacity,
+              border:          'none',
+              padding:         0,
+              cursor:          done ? 'default' : 'pointer',
+              transition:      'background-color 0.25s, opacity 0.1s',
+              zIndex:          40,
             }}
-          >
-            {active && !done && (
-              <>
-                <div style={{
-                  position: 'absolute', width: size * 2.4, height: size * 2.4,
-                  borderRadius: '50%', border: '1.5px solid rgba(251,191,36,0.45)',
-                  top: '50%', left: '50%',
-                  animation: 'calRingPulse 1.6s ease-out infinite',
-                  pointerEvents: 'none',
-                }} />
-                <ProgressRing progress={(clicks / clicksPerPoint) * 100} size={size} stroke={3} color="#fbbf24" />
-              </>
-            )}
-            <div style={{
-              width: 12, height: 12, borderRadius: '50%',
-              background: done ? '#10b981' : active ? '#fbbf24' : 'rgba(99,102,241,0.5)',
-              position: 'absolute', top: '50%', left: '50%',
-              transform: 'translate(-50%,-50%)',
-            }} />
-          </button>
+          />
         );
       })}
     </div>

@@ -1,65 +1,59 @@
-import { useState, useCallback, useRef } from 'react';
-import { CALIBRATION_POINTS, ptToPx } from '../utils/gazeUtils';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { CALIBRATION_POINTS } from '../utils/gazeUtils';
 
 const CLICKS_PER_POINT = 5;
-const TOTAL_CLICKS = CALIBRATION_POINTS.length * CLICKS_PER_POINT;
+const CENTER_INDEX     = 4; // index 4 = merkez nokta (50%, 50%)
+const OUTER_INDICES    = [0, 1, 2, 3, 5, 6, 7, 8];
+const TOTAL_CLICKS     = CALIBRATION_POINTS.length * CLICKS_PER_POINT;
 
-export function useCalibration({ recordCalibrationPoint, updateAccuracy }) {
-  const [phase, setPhase]             = useState('idle'); // idle | active | validating | done
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [clickMap, setClickMap]       = useState({});
-  const [doneSet, setDoneSet]         = useState(new Set());
-  const [totalClicks, setTotalClicks] = useState(0);
+// WebGazer demo kalibrasyon akışı:
+// 1. 8 dış nokta aynı anda gösterilir — herhangi birine tıklanabilir
+// 2. 8 dış nokta tamamlanınca merkez nokta belirir (PointCalibrate === 8)
+// 3. Merkez tamamlanınca validation'a geçilir
+export function useCalibration() {
+  const [phase,         setPhase]         = useState('idle');
+  const [clickMap,      setClickMap]      = useState({}); // { index → clickCount }
+  const [centerVisible, setCenterVisible] = useState(false);
 
   const savedRef = useRef(localStorage.getItem('gazeCalibrated') === 'true');
 
-  const isCalibrated = savedRef.current;
-  const progress     = Math.round((totalClicks / TOTAL_CLICKS) * 100);
+  // Türev hesaplar (state'ten)
+  const outerDoneCount = OUTER_INDICES.filter(i => (clickMap[i] ?? 0) >= CLICKS_PER_POINT).length;
+  const centerDone     = (clickMap[CENTER_INDEX] ?? 0) >= CLICKS_PER_POINT;
+  const totalClicks    = Object.values(clickMap).reduce((s, v) => s + v, 0);
+  const progress       = Math.round((totalClicks / TOTAL_CLICKS) * 100);
+
+  // 8 dış nokta bitince merkez belirir
+  useEffect(() => {
+    if (phase === 'active' && outerDoneCount >= 8 && !centerVisible) {
+      setCenterVisible(true);
+    }
+  }, [outerDoneCount, centerVisible, phase]);
+
+  // Merkez tamamlanınca validation'a geç
+  useEffect(() => {
+    if (phase === 'active' && centerDone && centerVisible) {
+      const t = setTimeout(() => setPhase('validating'), 500);
+      return () => clearTimeout(t);
+    }
+  }, [phase, centerDone, centerVisible]);
 
   const start = useCallback(() => {
     setPhase('active');
-    setActiveIndex(0);
     setClickMap({});
-    setDoneSet(new Set());
-    setTotalClicks(0);
+    setCenterVisible(false);
   }, []);
 
-  const handleDotClick = useCallback((pointIndex) => {
-    if (pointIndex !== activeIndex) return;
+  // Herhangi bir noktaya tıklanabilir (WebGazer demo: herhangi sıraya tıkla)
+  const handleDotClick = useCallback((i) => {
+    if (i === CENTER_INDEX && !centerVisible) return; // merkez henüz gizli
+    setClickMap(prev => {
+      const current = prev[i] ?? 0;
+      if (current >= CLICKS_PER_POINT) return prev; // zaten bitti
+      return { ...prev, [i]: current + 1 };
+    });
+  }, [centerVisible]);
 
-    const pt  = CALIBRATION_POINTS[pointIndex];
-    const px  = ptToPx(pt);
-
-    // 5 samples per click, starting at 60ms so the eye has settled on the target.
-    // Spread over 280ms captures the gaze as it stabilizes — early samples would catch
-    // the motor saccade from the click, late samples catch steady fixation.
-    // Total: 5 × 5 × 9 = 225 samples for a more reliable regression model.
-    setTimeout(() => recordCalibrationPoint(px.x, px.y),  60);
-    setTimeout(() => recordCalibrationPoint(px.x, px.y), 110);
-    setTimeout(() => recordCalibrationPoint(px.x, px.y), 160);
-    setTimeout(() => recordCalibrationPoint(px.x, px.y), 220);
-    setTimeout(() => recordCalibrationPoint(px.x, px.y), 280);
-
-    const prev    = clickMap[pointIndex] ?? 0;
-    const next    = prev + 1;
-    const newMap  = { ...clickMap, [pointIndex]: next };
-    setClickMap(newMap);
-    setTotalClicks((t) => t + 1);
-
-    if (next >= CLICKS_PER_POINT) {
-      const newDone = new Set(doneSet);
-      newDone.add(pointIndex);
-      setDoneSet(newDone);
-
-      if (pointIndex < CALIBRATION_POINTS.length - 1) {
-        setActiveIndex(pointIndex + 1);
-      } else {
-        setPhase('validating');
-      }
-    }
-  }, [activeIndex, clickMap, doneSet, recordCalibrationPoint]);
-
-  // Doğruluk testi tamamlandı → localStorage kaydet → EyeTracker mode-select'e geçer
   const finishValidation = useCallback(() => {
     localStorage.setItem('gazeCalibrated', 'true');
     savedRef.current = true;
@@ -70,21 +64,18 @@ export function useCalibration({ recordCalibrationPoint, updateAccuracy }) {
     localStorage.removeItem('gazeCalibrated');
     savedRef.current = false;
     setPhase('idle');
-    setActiveIndex(0);
     setClickMap({});
-    setDoneSet(new Set());
-    setTotalClicks(0);
+    setCenterVisible(false);
   }, []);
 
   return {
     phase,
-    activeIndex,
     clickMap,
-    doneSet,
+    centerVisible,
     progress,
-    isCalibrated: savedRef.current,
+    isCalibrated:   savedRef.current,
     clicksPerPoint: CLICKS_PER_POINT,
-    points: CALIBRATION_POINTS,
+    points:         CALIBRATION_POINTS,
     start,
     handleDotClick,
     finishValidation,

@@ -4,23 +4,34 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 export const _gazePositionRef = { current: { x: 0, y: 0 } };
 
 // Module-level flag: WebGazer starts once per page load.
-// useRef would reset on component unmount/remount (route change, etc.) — this does not.
 let _wgStarted = false;
 
 // ────────────────────────────────────────────────────────────────────────────
 export function useWebGazer() {
-  const [status,      setStatus]      = useState('idle');
-  const [gazePoint,   setGazePoint]   = useState({ x: 0, y: 0 });
-  const [faceDetected,setFaceDetected]= useState(false);
+  const [status,       setStatus]       = useState('idle');
+  const [gazePoint,    setGazePoint]    = useState({ x: 0, y: 0 });
+  const [faceDetected, setFaceDetected] = useState(false);
 
-  const faceRef        = useRef(false);
-  const faceTimerRef   = useRef(null);
-  const hideIntervalRef= useRef(null);
-  const lastGazeRef    = useRef({ x: -999, y: -999 });
+  const faceRef      = useRef(false);
+  const faceTimerRef = useRef(null);
 
-  // ── Hide WebGazer's own DOM elements (we use our own cursor) ──────────────
+  // ── Move WebGazer's DOM elements off-screen (keep display:block!) ─────────
+  //
+  // CRITICAL: NEVER use display:none on webgazerVideoFeed.
+  // MediaPipe calls canvas.drawImage(videoElement) in its frame loop.
+  // display:none suppresses video decoding in Firefox and some Chrome
+  // versions — every frame comes back blank → "no face" / tracking loss.
+  // Off-screen positioning keeps the element in the layout tree so the
+  // browser continues decoding video frames.
   const hideWgUI = useCallback(() => {
-    ['webgazerVideoFeed','webgazerFaceOverlay','webgazerFaceFeedbackBox','webgazerGazeDot']
+    const video = document.getElementById('webgazerVideoFeed');
+    if (video) {
+      video.style.cssText =
+        'position:fixed!important;top:-9999px!important;left:-9999px!important;' +
+        'width:320px!important;height:240px!important;' +
+        'pointer-events:none!important;z-index:-1!important;display:block!important;';
+    }
+    ['webgazerFaceOverlay', 'webgazerFaceFeedbackBox', 'webgazerGazeDot']
       .forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = 'none';
@@ -28,14 +39,14 @@ export function useWebGazer() {
   }, []);
 
   // ── init ──────────────────────────────────────────────────────────────────
-  // Returns true on success, false on failure.
   const init = useCallback(async (isCalibrated = false) => {
     const wg = window.webgazer;
     if (!wg) { setStatus('error'); return false; }
 
-    // Already running (component remount, route change) — just resume + signal ok.
+    // Already running (component remount / route change) — resume and hide UI.
     if (_wgStarted) {
       try { wg.resume(); } catch (_) {}
+      hideWgUI();
       setStatus('ready');
       return true;
     }
@@ -50,9 +61,17 @@ export function useWebGazer() {
     try {
       _wgStarted = true;
 
+      // Set non-display params before begin() — these are just config values.
       wg.params.showFaceFeedbackBox = false;
       wg.params.showFaceOverlay     = false;
 
+      // ── WebGazer demo init order (from brownhci/WebGazer main.js) ──────────
+      // begin() is awaited first, then display options are set AFTER.
+      // Reason: begin() creates the video DOM element. Calling showVideo(false)
+      // BEFORE begin() causes begin() to create the element with display:none,
+      // which breaks MediaPipe's canvas.drawImage() frame loop entirely.
+      // The demo calls showVideoPreview(true) after begin() — we call hideWgUI()
+      // instead to move the element off-screen while keeping display:block.
       await wg
         .setRegression('ridge')
         .setTracker('mediapipe')
@@ -64,7 +83,7 @@ export function useWebGazer() {
                 faceRef.current = false;
                 setFaceDetected(false);
                 faceTimerRef.current = null;
-              }, 300); // 300ms tolerance: handles blinks
+              }, 300); // 300ms tolerance handles blinks
             }
             return;
           }
@@ -77,35 +96,28 @@ export function useWebGazer() {
           if (!isFinite(data.x) || !isFinite(data.y)) return;
           if (!faceRef.current) { faceRef.current = true; setFaceDetected(true); }
 
-          // WebGazer Kalman output — clamp to viewport, no extra math
+          // Clamp to viewport — WebGazer native output, minimal processing
           const x = Math.max(0, Math.min(window.innerWidth,  data.x));
           const y = Math.max(0, Math.min(window.innerHeight, data.y));
 
-          // Ref path: every prediction, zero delay (cursor + GazePassword use this)
           _gazePositionRef.current = { x, y };
-
-          // React state path: 3 px threshold prevents 30 fps re-render cascade
-          const dx = Math.abs(x - lastGazeRef.current.x);
-          const dy = Math.abs(y - lastGazeRef.current.y);
-          if (dx > 3 || dy > 3) {
-            lastGazeRef.current = { x, y };
-            setGazePoint({ x, y });
-          }
+          setGazePoint({ x, y });
         })
-        .saveDataAcrossSessions(true)   // demo: always true — model data must persist across sessions
-        .showVideo(false)
-        .showFaceOverlay(false)
-        .showFaceFeedbackBox(false)
-        .begin();
+        .saveDataAcrossSessions(true)
+        .begin(); // ← await here, then configure display below
 
-      // Same as demo page: Kalman filter on. We use our own cursor so dot off.
+      // ── Post-begin() configuration (matches demo order) ──────────────────
       try { wg.applyKalmanFilter(true); } catch (_) {}
-      wg.showPredictionPoints(false);
+      wg.showPredictionPoints(false); // we use our own GazeCursor
 
-      // WebGazer sometimes recreates its own DOM; hide it when it does.
+      // Move video off-screen (display:block preserved — required by MediaPipe).
+      // Called immediately + at 200ms and 800ms because WebGazer creates some
+      // elements asynchronously after begin() resolves.
+      hideWgUI();
       setTimeout(hideWgUI, 200);
       setTimeout(hideWgUI, 800);
-      hideIntervalRef.current = setInterval(hideWgUI, 3000);
+      // No recurring interval — 800ms is sufficient; a periodic interval risks
+      // fighting WebGazer's own DOM updates and causes unnecessary overhead.
 
       setStatus('ready');
       return true;
@@ -121,23 +133,23 @@ export function useWebGazer() {
   const clearCalibrationData = useCallback(() => {
     window.webgazer?.clearData();
     localStorage.removeItem('webgazerGlobalData');
-    lastGazeRef.current = { x: -999, y: -999 };
   }, []);
 
+  // NOTE: recordCalibrationPoint is kept for backward compatibility but should
+  // NOT be called during calibration — WebGazer's built-in document click
+  // listener (added by begin()) already records every click at (clientX, clientY).
+  // Calling this explicitly would double-record each calibration click, feeding
+  // the ridge regression two slightly-different labels for the same eye features.
   const recordCalibrationPoint = useCallback((x, y) => {
     window.webgazer?.recordScreenPosition?.(x, y, 'click');
   }, []);
 
   // ── cleanup ───────────────────────────────────────────────────────────────
   useEffect(() => {
-    // Pause WebGazer when the browser tab/window closes, not on component cleanup.
-    // Pausing on component cleanup breaks route-change + remount scenarios.
     const onUnload = () => { try { window.webgazer?.pause(); } catch (_) {} };
     window.addEventListener('beforeunload', onUnload);
-
     return () => {
       window.removeEventListener('beforeunload', onUnload);
-      clearInterval(hideIntervalRef.current);
       clearTimeout(faceTimerRef.current);
     };
   }, []);
@@ -146,8 +158,8 @@ export function useWebGazer() {
     status,
     gazePoint,
     faceDetected,
-    fps:      0, // removed — was causing 1 Hz re-renders
-    accuracy: 0, // removed — was causing extra state churn
+    fps:      0,
+    accuracy: 0,
     init,
     clearCalibrationData,
     recordCalibrationPoint,

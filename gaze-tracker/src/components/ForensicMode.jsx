@@ -23,6 +23,31 @@ export default function ForensicMode({ faceDetected, onBack }) {
   const [selectedId, setSelectedId] = useState(null);
   const [isDragOver, setIsDragOver] = useState(false);
 
+  // Güvenli kilit: yüz kaybolunca anında kilitler, yüz 800ms kesintisiz görününce açar.
+  // Başlangıçta kilitli — yüz onaylanmadan içerik görünmez.
+  const [isLocked,    setIsLocked]    = useState(true);
+  const unlockTimerRef = useRef(null);
+
+  useEffect(() => {
+    if (!faceDetected) {
+      // Yüz yok → anında kilitle, bekleme iptal
+      clearTimeout(unlockTimerRef.current);
+      unlockTimerRef.current = null;
+      setIsLocked(true);
+    } else {
+      // Yüz var → 800ms boyunca kesintisiz kalırsa aç
+      if (!unlockTimerRef.current) {
+        unlockTimerRef.current = setTimeout(() => {
+          unlockTimerRef.current = null;
+          setIsLocked(false);
+        }, 800);
+      }
+    }
+    return () => {};
+  }, [faceDetected]);
+
+  const isContentBlurred = isLocked;
+
   const fileIdRef     = useRef(0);
   const faceRef       = useRef(faceDetected);
   const lastTargetRef = useRef(null);
@@ -220,7 +245,7 @@ export default function ForensicMode({ faceDetected, onBack }) {
             padding: '.26rem .72rem', borderRadius: 100,
             fontSize: '.72rem', fontWeight: 600,
             background: faceDetected ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)',
-            color:      faceDetected ? '#34d399'              : '#f87171',
+            color:      faceDetected ? '#34d399'               : '#f87171',
             border: `1px solid ${faceDetected ? 'rgba(16,185,129,0.22)' : 'rgba(239,68,68,0.22)'}`,
           }}>
             <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }} />
@@ -245,9 +270,8 @@ export default function ForensicMode({ faceDetected, onBack }) {
           background: 'rgba(4,4,14,0.97)',
           borderRight: '1px solid rgba(255,255,255,0.06)',
           display: 'flex', flexDirection: 'column',
-          overflow: 'hidden',
+          overflowY: 'auto',
         }}>
-
           {/* Upload alanı */}
           <div
             onDrop={handleDrop}
@@ -346,12 +370,12 @@ export default function ForensicMode({ faceDetected, onBack }) {
             data-evidence-hash={selectedFile?.hash}
             style={{
               position: 'absolute', inset: 0,
-              filter: faceDetected ? 'none' : 'blur(20px)',
+              filter: isContentBlurred ? 'blur(20px)' : 'none',
+              transition: 'filter .15s ease',
               display: 'flex', flexDirection: 'column',
             }}
           >
             {!selectedFile ? (
-              /* Boş durum */
               <div style={{
                 flex: 1, display: 'flex', flexDirection: 'column',
                 alignItems: 'center', justifyContent: 'center',
@@ -361,7 +385,6 @@ export default function ForensicMode({ faceDetected, onBack }) {
                 <div style={{ fontSize: '.88rem' }}>Sol panelden incelemek istediğiniz dosyayı seçin</div>
               </div>
             ) : selectedFile.type === 'image' ? (
-              /* Görüntü görüntüleyici */
               <div style={{
                 flex: 1, display: 'flex', flexDirection: 'column',
                 alignItems: 'center', justifyContent: 'center',
@@ -387,9 +410,7 @@ export default function ForensicMode({ faceDetected, onBack }) {
                 </div>
               </div>
             ) : (
-              /* Metin / log görüntüleyici */
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                {/* Dosya başlık şeridi */}
                 <div style={{
                   padding: '.55rem 1rem',
                   background: 'rgba(6,182,212,0.07)',
@@ -403,8 +424,6 @@ export default function ForensicMode({ faceDetected, onBack }) {
                     {selectedFile.data.split('\n').length} satır · {selectedFile.size}
                   </span>
                 </div>
-
-                {/* Satırlar */}
                 <div style={{
                   flex: 1, overflowY: 'auto',
                   fontFamily: '"Courier New", Courier, monospace',
@@ -447,8 +466,8 @@ export default function ForensicMode({ faceDetected, onBack }) {
             )}
           </div>
 
-          {/* Güvenlik overlay — blur dışında, keskin kalır */}
-          {!faceDetected && (
+          {/* Blur overlay mesajı */}
+          {isContentBlurred && (
             <div style={{
               position: 'absolute', inset: 0, zIndex: 50,
               display: 'flex', alignItems: 'center', justifyContent: 'center',

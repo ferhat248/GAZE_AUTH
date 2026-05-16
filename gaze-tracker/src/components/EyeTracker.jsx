@@ -10,10 +10,7 @@ import StatusPanel          from './StatusPanel';
 
 export default function EyeTracker() {
   const wg = useWebGazer();
-  const cal = useCalibration({
-    recordCalibrationPoint: wg.recordCalibrationPoint,
-    updateAccuracy:         wg.updateAccuracy,
-  });
+  const cal = useCalibration();
 
   // loading | calibrating | mode-select | photo | tracking | forensic
   const [appPhase, setAppPhase] = useState('loading');
@@ -69,7 +66,7 @@ export default function EyeTracker() {
 
   /* ── Calibrating ── */
   if (appPhase === 'calibrating') {
-    return <CalibrationScreen cal={cal} />;
+    return <CalibrationScreen cal={cal} faceDetected={wg.faceDetected} />;
   }
 
   /* ── Mode Select ── */

@@ -7,9 +7,6 @@ const HALF = SIZE / 2;
 function GazeCursor({ faceDetected, visible }) {
   const elRef = useRef(null);
 
-  // RAF loop: direct Kalman output → cursor position.
-  // WebGazer's applyKalmanFilter(true) already smooths the signal.
-  // Adding a second EMA on top makes the cursor noticeably laggier than the demo.
   useEffect(() => {
     if (!elRef.current) return;
     let rafId;
